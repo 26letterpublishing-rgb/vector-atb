@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Spaceship Architect ATB Sync</title>
-    <link rel="stylesheet" href="styles.css?v=20260708-npc-delay-2" />
+    <title>Vector ATB Sync</title>
+    <link rel="stylesheet" href="styles.css?v=20260710-vector-phase-1" />
   </head>
   <body>
     <main class="shell">
       <section id="welcomePanel" class="welcome-panel">
         <div class="welcome-hero">
-          <img class="welcome-banner" src="SAATBBanner.jpg" alt="Spaceship Architect ATB Sync" />
+          <img class="welcome-banner" src="SAATBBanner.jpg" alt="Vector ATB Sync" />
         </div>
         <div class="welcome-actions">
           <div class="mode-buttons">
@@ -22,7 +22,7 @@
 
       <section id="topbar" class="topbar">
         <div class="topbar-title">
-          <img class="topbar-banner" src="SAATBBanner.jpg" alt="Spaceship Architect ATB Sync" />
+          <img class="topbar-banner" src="SAATBBanner.jpg" alt="Vector ATB Sync" />
           <div id="gmTopControls" class="gm-top-controls hidden">
             <button id="resetAll" class="top-control-btn warning">Reset</button>
             <button id="clearEncounter" class="top-control-btn danger">Clear</button>
@@ -56,7 +56,7 @@
       <section id="joinPanel" class="panel join-panel">
         <div>
           <h2>Join Encounter</h2>
-          <p>Enter your names, match your character sheet, and choose an ATB color.</p>
+          <p>Enter your names and choose an ATB color. This prototype assumes Base 7 and a 20 second Command Window.</p>
         </div>
         <label>
           Player Name
@@ -74,7 +74,7 @@
           Character Icon
           <input id="characterIcon" type="file" accept="image/jpeg,image/png" />
         </label>
-        <div class="pc-stat-builder">
+        <div class="pc-stat-builder hidden">
           <div class="stat-board" data-stat="perception">
             <div class="stat-title">Perception</div>
             <div class="stat-grid" id="perceptionDiceGrid"></div>
@@ -102,7 +102,7 @@
             </div>
           </div>
         </div>
-        <img class="dice-strip" src="dice-icons-white.png" alt="" aria-hidden="true" />
+        <img class="dice-strip hidden" src="dice-icons-white.png" alt="" aria-hidden="true" />
         <div class="join-actions">
           <button id="joinPlayer" class="primary">Join as Player</button>
           <button id="openGm">Back</button>
@@ -134,8 +134,8 @@
             <input id="gmCharacterName" placeholder="Security Guard" />
           </label>
           <label>
-            Speed % / Sec
-            <input id="gmSpeedRating" type="number" min="1" max="100" step="0.5" value="5" />
+            Base
+            <input id="gmSpeedRating" type="number" min="1" max="30" step="1" value="7" />
           </label>
           <label id="gmCommandWindowWrap">
             Command Window
@@ -170,8 +170,8 @@
           <strong id="playerTurnTitle">YOUR TURN</strong>
           <span id="playerCommandStatus">Resolve your action, then end your turn.</span>
           <div id="playerTurnActions" class="player-turn-actions">
-            <button id="playerEndTurn" class="complete player-complete">Turn Complete/Pass Turn</button>
-            <button id="playerDelay" class="secondary">Delay</button>
+            <button id="playerEndTurn" class="complete player-complete">Choose Action</button>
+            <button id="playerDelay" class="secondary hidden">Delay</button>
           </div>
         </div>
         <div id="myUnitCard"></div>
@@ -188,7 +188,7 @@
       <section id="initiativePanel" class="panel">
         <div class="section-head">
           <div>
-            <p class="eyebrow">Initiative Console</p>
+              <p class="eyebrow">ATB Console</p>
             <h2>ATB Monitor</h2>
           </div>
           <div id="playerTopControls" class="player-top-controls hidden">
@@ -225,7 +225,7 @@
       <p id="activeOwner">Player</p>
       <div class="dialog-actions">
         <button id="completeTurn" class="complete">Action Resolved</button>
-        <button id="gmDelay" class="secondary">Delay</button>
+        <button id="gmDelay" class="secondary hidden">Delay</button>
       </div>
     </section>
 
@@ -306,6 +306,6 @@
       <div id="playerActionChoices" class="action-choice-grid"></div>
     </div>
 
-    <script src="app.js?v=20260708-npc-delay-2"></script>
+    <script src="app.js?v=20260710-vector-phase-1"></script>
   </body>
 </html>
