@@ -1,0 +1,12 @@
+==== Spaceship Architect ATB Diagnostic Log ==== 
+Started: Fri 06/19/2026 10:51:23.82 
+Folder: C:\Users\zombi\Desktop\Spaceship Architect 2026 Sorting\sa-atb-multiplayer 
+Node: C:\Users\zombi\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe 
+ 
+v24.14.0
+ 
+==== Server Output ==== 
+Spaceship Architect ATB multiplayer running
+Local:   http://127.0.0.1:8787
+Phone:   http://10.0.0.126:8787
+^C

@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Spaceship Architect ATB Sync</title>
+    <link rel="stylesheet" href="styles.css?v=20260708-npc-delay-2" />
+  </head>
+  <body>
+    <main class="shell">
+      <section id="welcomePanel" class="welcome-panel">
+        <div class="welcome-hero">
+          <img class="welcome-banner" src="SAATBBanner.jpg" alt="Spaceship Architect ATB Sync" />
+        </div>
+        <div class="welcome-actions">
+          <div class="mode-buttons">
+            <button id="createRoom" class="primary">Create Room as GM</button>
+            <button id="showJoinRoom">Join Room as Player</button>
+          </div>
+        </div>
+      </section>
+
+      <section id="topbar" class="topbar">
+        <div class="topbar-title">
+          <img class="topbar-banner" src="SAATBBanner.jpg" alt="Spaceship Architect ATB Sync" />
+          <div id="gmTopControls" class="gm-top-controls hidden">
+            <button id="resetAll" class="top-control-btn warning">Reset</button>
+            <button id="clearEncounter" class="top-control-btn danger">Clear</button>
+            <button id="exitCombat" class="top-control-btn danger exit-combat">Exit Combat</button>
+          </div>
+          <button id="gmMuteSound" class="sound-toggle hidden" aria-label="Mute sounds" title="Mute sounds"><span></span></button>
+        </div>
+        <div class="room">
+          <span>Room</span>
+          <strong id="roomCode">----</strong>
+        </div>
+      </section>
+
+      <section id="connectionStatus" class="connection-status">
+        Connecting to the ATB room server...
+      </section>
+
+      <section id="roomJoinPanel" class="panel room-join-panel hidden">
+        <div>
+          <h2>Join Room</h2>
+          <p>Enter the room code from the GM screen.</p>
+        </div>
+        <label>
+          Room Code
+          <input id="joinRoomCode" maxlength="4" placeholder="A7K4" />
+        </label>
+        <button id="confirmJoinRoom" class="primary">Continue</button>
+        <button id="backToWelcome">Back</button>
+      </section>
+
+      <section id="joinPanel" class="panel join-panel">
+        <div>
+          <h2>Join Encounter</h2>
+          <p>Enter your names, match your character sheet, and choose an ATB color.</p>
+        </div>
+        <label>
+          Player Name
+          <input id="playerName" autocomplete="name" placeholder="Enter YOUR name here" />
+        </label>
+        <label>
+          Character Name
+          <input id="characterName" placeholder="Enter your CHARACTERS name here" />
+        </label>
+        <label>
+          ATB Color
+          <input id="playerColor" type="color" value="#39e58f" />
+        </label>
+        <label>
+          Character Icon
+          <input id="characterIcon" type="file" accept="image/jpeg,image/png" />
+        </label>
+        <div class="pc-stat-builder">
+          <div class="stat-board" data-stat="perception">
+            <div class="stat-title">Perception</div>
+            <div class="stat-grid" id="perceptionDiceGrid"></div>
+          </div>
+          <div class="stat-board" data-stat="intellect">
+            <div class="stat-title">Intellect</div>
+            <div class="stat-grid" id="intellectDiceGrid"></div>
+          </div>
+          <label>
+            Awareness
+            <input id="awarenessSkill" type="number" min="0" max="20" step="1" value="0" />
+          </label>
+          <label>
+            Initiative
+            <input id="initiativeSkill" type="number" min="0" max="20" step="1" value="0" />
+          </label>
+          <div class="calculated-stats">
+            <div>
+              <span>Speed</span>
+              <strong id="calculatedSpeed">2</strong>
+            </div>
+            <div>
+              <span>Command Window</span>
+              <strong id="calculatedCommand">20 sec</strong>
+            </div>
+          </div>
+        </div>
+        <img class="dice-strip" src="dice-icons-white.png" alt="" aria-hidden="true" />
+        <div class="join-actions">
+          <button id="joinPlayer" class="primary">Join as Player</button>
+          <button id="openGm">Back</button>
+        </div>
+        <div id="rejoinBlock" class="rejoin-block hidden">
+          <label>
+            Reclaim Character
+            <select id="rejoinSelect"></select>
+          </label>
+          <button id="rejoinPlayer">Rejoin</button>
+        </div>
+      </section>
+
+      <section id="gmPanel" class="panel hidden">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">GM Console</p>
+            <h2>Encounter Control</h2>
+          </div>
+          <div class="clock" id="clockState">Paused</div>
+        </div>
+        <div class="add-grid">
+          <label>
+            Player
+            <input id="gmPlayerName" placeholder="GM" value="GM" />
+          </label>
+          <label>
+            Character / NPC
+            <input id="gmCharacterName" placeholder="Security Guard" />
+          </label>
+          <label>
+            Speed % / Sec
+            <input id="gmSpeedRating" type="number" min="1" max="100" step="0.5" value="5" />
+          </label>
+          <label id="gmCommandWindowWrap">
+            Command Window
+            <input id="gmCommandWindow" type="number" min="1" max="999" step="1" value="30" />
+          </label>
+          <label>
+            ATB Color
+            <input id="gmColor" type="color" value="#39e58f" />
+          </label>
+          <label>
+            Side
+            <select id="gmTeam">
+              <option value="npc" selected>NPC</option>
+              <option value="pc">PC</option>
+            </select>
+          </label>
+          <button id="gmAddUnit">Add</button>
+        </div>
+        <div class="controls gm-timing-controls">
+          <button id="undoLastTiming" class="control-square undo">Undo<br />Timing</button>
+          <button id="stepTick" class="control-square">Step<br />1 Sec</button>
+        </div>
+      </section>
+
+      <section id="playerPanel" class="panel hidden">
+        <div id="myTurnBanner" class="turn-banner hidden">
+          <div id="playerCommandDial" class="command-dial hidden" aria-hidden="true">
+            <div class="command-dial-ring">
+              <span id="playerCommandTime">--:--</span>
+            </div>
+          </div>
+          <strong id="playerTurnTitle">YOUR TURN</strong>
+          <span id="playerCommandStatus">Resolve your action, then end your turn.</span>
+          <div id="playerTurnActions" class="player-turn-actions">
+            <button id="playerEndTurn" class="complete player-complete">Turn Complete/Pass Turn</button>
+            <button id="playerDelay" class="secondary">Delay</button>
+          </div>
+        </div>
+        <div id="myUnitCard"></div>
+      </section>
+
+      <section id="activePanel" class="active-panel">
+        <div>
+          <p class="eyebrow" id="activeKicker">Clock Status</p>
+          <h2 id="activeTitle">Waiting for GM to engage clock</h2>
+        </div>
+        <div id="activeMeta" class="active-meta">No active turn</div>
+      </section>
+
+      <section id="initiativePanel" class="panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Initiative Console</p>
+            <h2>ATB Monitor</h2>
+          </div>
+          <div id="playerTopControls" class="player-top-controls hidden">
+            <button id="enableAlerts">Enable Sound / Vibration</button>
+            <button id="leaveRoom" class="leave-room">Leave Room</button>
+            <div class="player-room-code">
+              <span>Room</span>
+              <strong id="playerRoomCode">----</strong>
+            </div>
+          </div>
+          <span id="readyCount" class="ready-count">0 Ready</span>
+        </div>
+        <div id="unitList" class="unit-list"></div>
+      </section>
+
+      <section id="logPanel" class="panel log-panel">
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Log</p>
+            <h2>Combat Log</h2>
+          </div>
+          <label class="combat-log-toggle hidden">
+            <input id="playerActionLogToggle" type="checkbox" checked />
+            Show Combat Log Popup
+          </label>
+        </div>
+        <div id="logList" class="log-list"></div>
+      </section>
+    </main>
+
+    <section id="turnDialog" class="turn-dialog hidden" role="dialog" aria-live="polite">
+      <p id="turnDialogKicker" class="eyebrow">Turn Ready</p>
+      <h2 id="activeName">Character</h2>
+      <p id="activeOwner">Player</p>
+      <div class="dialog-actions">
+        <button id="completeTurn" class="complete">Action Resolved</button>
+        <button id="gmDelay" class="secondary">Delay</button>
+      </div>
+    </section>
+
+    <section id="delayDialog" class="delay-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="delayDialogTitle">
+      <div class="delay-dialog-panel">
+        <div class="delay-dialog-head">
+          <div>
+            <p class="eyebrow">Delay Console</p>
+            <h2 id="delayDialogTitle">Configure Delay</h2>
+            <p id="delayDialogTarget">Character</p>
+          </div>
+          <div class="delay-rate-readout">
+            <span>Timer</span>
+            <strong id="delayRatePreview">8.0</strong>
+            <small id="delayModifierPreview">Base 8</small>
+          </div>
+        </div>
+
+        <div class="delay-kind-toggle" aria-label="Delay type">
+          <button type="button" data-delay-kind="timer">Reload/Recovery</button>
+          <button type="button" data-delay-kind="action">Delayed Resolution</button>
+          <button type="button" data-delay-kind="queued">Queued Effect</button>
+        </div>
+
+        <label id="delayActionNameWrap" class="delay-action-name">
+          Resolution Name
+          <input id="delayActionName" maxlength="42" placeholder="Missile Impact" />
+        </label>
+
+        <div id="delayBaseGrid" class="delay-base-grid"></div>
+        <div id="delayC4Grid" class="delay-c4-grid"></div>
+
+        <div class="delay-dialog-actions">
+          <button id="cancelDelayDialog" type="button" class="secondary">Cancel</button>
+          <button id="confirmDelayDialog" type="button" class="complete">Confirm Delay</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="queuedEffectDialog" class="queued-effect-dialog hidden" role="dialog" aria-modal="true" aria-labelledby="queuedEffectTitle">
+      <div class="queued-effect-panel">
+        <div class="delay-dialog-head">
+          <div>
+            <p class="eyebrow">Queued Effect</p>
+            <h2 id="queuedEffectTitle">Configure Queued Effect</h2>
+            <p id="queuedEffectTarget">Character</p>
+          </div>
+          <div class="delay-rate-readout queued-readout">
+            <span>Speed</span>
+            <strong id="queuedEffectRatePreview">8.0</strong>
+            <small id="queuedEffectModifierPreview">Base 8</small>
+          </div>
+        </div>
+
+        <label class="delay-action-name">
+          Effect Name
+          <input id="queuedEffectName" maxlength="42" placeholder="Missile Impact" />
+        </label>
+
+        <div id="queuedEffectBaseGrid" class="delay-base-grid"></div>
+        <div id="queuedEffectC4Grid" class="delay-c4-grid"></div>
+
+        <div class="delay-dialog-actions">
+          <button id="cancelQueuedEffectDialog" type="button" class="secondary">Cancel</button>
+          <button id="confirmQueuedEffectDialog" type="button" class="complete">Confirm Queued Effect</button>
+        </div>
+      </div>
+    </section>
+
+    <button id="gmPanicPause" class="gm-panic-pause hidden">Pause Everything</button>
+    <button id="visualModeToggle" class="visual-mode-toggle hidden" type="button">Tactical Ring</button>
+
+    <div id="playerActionSheet" class="player-action-sheet hidden">
+      <div class="action-sheet-head">
+        <strong>What did you do?</strong>
+        <button id="dismissActionSheet" class="mini">Later</button>
+      </div>
+      <div id="playerActionChoices" class="action-choice-grid"></div>
+    </div>
+
+    <script src="app.js?v=20260708-npc-delay-2"></script>
+  </body>
+</html>
