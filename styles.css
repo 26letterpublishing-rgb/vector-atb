@@ -3186,18 +3186,79 @@ h2 {
 
 /* Vector phase prototype */
 .vector-unit-card {
-  border-color: rgba(var(--bar-rgb, 57, 229, 143), 0.36);
+  border-color: rgba(var(--bar-rgb, 57, 229, 143), 0.66);
+  box-shadow:
+    0 0 0 1px rgba(var(--bar-rgb, 57, 229, 143), 0.26),
+    0 0 26px rgba(var(--bar-rgb, 57, 229, 143), 0.28),
+    0 16px 34px rgba(0, 0, 0, 0.34);
+}
+
+.vector-unit-card.ready {
+  box-shadow:
+    0 0 0 1px rgba(var(--bar-rgb, 57, 229, 143), 0.44),
+    0 0 38px rgba(var(--bar-rgb, 57, 229, 143), 0.42),
+    0 18px 38px rgba(0, 0, 0, 0.38);
 }
 
 .vector-unit-card.resolving {
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.16),
-    0 0 34px rgba(255, 255, 255, 0.13),
-    0 0 28px rgba(var(--bar-rgb, 57, 229, 143), 0.32);
+    0 0 0 1px rgba(var(--bar-rgb, 57, 229, 143), 0.5),
+    0 0 46px rgba(var(--bar-rgb, 57, 229, 143), 0.46),
+    0 0 18px rgba(255, 255, 255, 0.18),
+    0 18px 42px rgba(0, 0, 0, 0.42);
 }
 
 .vector-card-main {
   min-width: 0;
+}
+
+.vector-unit-top {
+  grid-template-columns: minmax(0, 1fr) minmax(178px, 340px) auto;
+}
+
+.vector-unit-top .unit-actions {
+  grid-column: 1 / -1;
+  justify-self: end;
+}
+
+.vector-action-readout {
+  align-self: start;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 7px;
+  background: rgba(3, 7, 12, 0.58);
+  text-align: right;
+}
+
+.vector-action-readout strong,
+.vector-action-readout span {
+  display: block;
+}
+
+.vector-action-readout strong {
+  overflow: hidden;
+  color: #f8fbff;
+  font-size: 0.9rem;
+  line-height: 1.14;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vector-action-readout span {
+  margin-top: 4px;
+  color: rgba(231, 242, 255, 0.76);
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.vector-action-readout .risk-bad {
+  color: #ffb4a9;
+}
+
+.vector-action-readout .risk-good {
+  color: #9ff0c2;
 }
 
 .vector-phase-line {
@@ -3254,30 +3315,65 @@ h2 {
 }
 
 .vector-phase-meter {
+  position: relative;
   height: 24px;
+  overflow: hidden;
 }
 
 .vector-phase-meter.draining .fill {
   filter: saturate(0.92);
 }
 
-.phase-preparation .fill,
-.phase-recovery .fill {
-  background:
-    linear-gradient(90deg, rgba(255, 209, 102, 0.82), rgba(var(--bar-rgb, 57, 229, 143), 0.9)),
-    var(--bar);
+.vector-bar-label {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.76rem;
+  font-weight: 950;
+  letter-spacing: 0;
+  line-height: 1;
+  pointer-events: none;
+  text-transform: uppercase;
+  text-shadow:
+    -1px -1px 0 #000,
+    1px -1px 0 #000,
+    -1px 1px 0 #000,
+    1px 1px 0 #000,
+    0 0 8px rgba(0, 0, 0, 0.95);
 }
 
-.phase-execution .fill {
+.vector-unit-card.phase-decision .vector-phase-meter .fill {
   background:
-    linear-gradient(90deg, rgba(255, 93, 93, 0.82), rgba(var(--bar-rgb, 57, 229, 143), 0.9)),
-    var(--bar);
+    linear-gradient(90deg, #4659ff, #7e5cff 58%, #2ed4ff),
+    #5f67ff;
 }
 
-.phase-dumbfounded .fill {
+.vector-unit-card.phase-preparation .vector-phase-meter .fill {
   background:
-    linear-gradient(90deg, rgba(166, 92, 255, 0.95), rgba(255, 95, 162, 0.88)),
-    var(--bar);
+    linear-gradient(90deg, #ff9f3f, #ffc46b 62%, #ffe2a0),
+    #ffb55c;
+}
+
+.vector-unit-card.phase-execution .vector-phase-meter .fill {
+  background:
+    linear-gradient(90deg, #5d0707, #9e1616 58%, #e43c30),
+    #9e1616;
+}
+
+.vector-unit-card.phase-recovery .vector-phase-meter .fill {
+  background:
+    linear-gradient(90deg, #58606a, #7e8794 62%, #aeb6c1),
+    #7e8794;
+}
+
+.vector-unit-card.phase-dumbfounded .vector-phase-meter .fill {
+  background:
+    linear-gradient(90deg, #7c3cff, #ff4fa3),
+    #a65cff;
 }
 
 .vector-phase-foot {
@@ -3343,6 +3439,19 @@ h2 {
 }
 
 @media (max-width: 720px) {
+  .vector-unit-top {
+    grid-template-columns: 1fr auto;
+  }
+
+  .vector-action-readout {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+
+  .vector-action-readout strong {
+    white-space: normal;
+  }
+
   .vector-phase-line {
     align-items: stretch;
     flex-direction: column;

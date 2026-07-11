@@ -114,6 +114,21 @@ const actionFallbacks = [
   },
 ];
 
+let npcDefaultBag = [];
+let currentNpcDefault = null;
+
+const npcDefaults = [
+  { characterName: "Security Guard", baseline: 5, color: "#39e58f" },
+  { characterName: "Street Tough", baseline: 6, color: "#f07a4a" },
+  { characterName: "Corporate Agent", baseline: 8, color: "#35b7ff" },
+  { characterName: "Civilian", baseline: 4, color: "#f2d16b" },
+  { characterName: "Drone Handler", baseline: 7, color: "#20f5d0" },
+  { characterName: "Police Exo", baseline: 9, color: "#ff5fa2" },
+  { characterName: "Fast Operative", baseline: 11, color: "#a65cff" },
+  { characterName: "Heavy Enforcer", baseline: 3, color: "#ff3d55" },
+  { characterName: "Vector Anomaly", baseline: 12, color: "#8bd7ff" },
+];
+
 function $(selector) {
   return document.querySelector(selector);
 }
@@ -215,6 +230,28 @@ function actionById(actionId) {
   return actions().find((entry) => entry.id === actionId) || actionFallbacks[actionFallbacks.length - 1];
 }
 
+function shuffleNpcDefaultBag() {
+  npcDefaultBag = [...npcDefaults];
+  for (let i = npcDefaultBag.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [npcDefaultBag[i], npcDefaultBag[j]] = [npcDefaultBag[j], npcDefaultBag[i]];
+  }
+}
+
+function nextNpcDefault() {
+  if (!npcDefaultBag.length) shuffleNpcDefaultBag();
+  currentNpcDefault = npcDefaultBag.pop() || npcDefaults[0];
+  return currentNpcDefault;
+}
+
+function applyNpcDefaultPreview({ force = false } = {}) {
+  if (!gmTeam || gmTeam.value !== "npc") return;
+  const preview = currentNpcDefault || nextNpcDefault();
+  if (force || !gmCharacterName.value.trim()) gmCharacterName.value = preview.characterName;
+  if (force || !gmSpeedRating.value.trim() || gmSpeedRating.value === "7") gmSpeedRating.value = preview.baseline;
+  if (force || !gmColor.value) gmColor.value = preview.color;
+}
+
 function mark(value) {
   const step = Math.round(Number(value) || 0);
   if (step === 0) return "0";
@@ -258,7 +295,7 @@ function phaseLabel(unit) {
   const phase = unit?.phase || "decision";
   if (phase === "decision") return "DECISION";
   if (phase === "preparation") return "PREPARATION";
-  if (phase === "execution") return state?.activeAction?.unitId === unit?.id ? "RESOLUTION WINDOW" : "EXECUTION";
+  if (phase === "execution") return "EXECUTION";
   if (phase === "recovery") return "RECOVERY";
   if (phase === "dumbfounded") return "DUMBFOUNDED!";
   return phase.toUpperCase();
@@ -441,6 +478,10 @@ function unitCard(unit, { gm = false, player = false } = {}) {
           <div class="unit-name">${escapeHtml(unit.characterName)}</div>
           <div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - Base ${formatRate(unit.baseline)}${unit.commandWindow ? ` - ${unit.commandWindow} sec Command` : ""}</div>
         </div>
+        <div class="vector-action-readout">
+          <strong>${escapeHtml(actionLabel(unit))}</strong>
+          <span class="${Number(unit.currentRisk) < 0 ? "risk-good" : Number(unit.currentRisk) > 0 ? "risk-bad" : ""}">${escapeHtml(currentRiskLabel(unit))}</span>
+        </div>
         ${
           player && own
             ? `<label class="player-color-inline" title="Change your ATB color">
@@ -482,18 +523,10 @@ function unitCard(unit, { gm = false, player = false } = {}) {
             : ""
         }
       </div>
-      <div class="vector-phase-line">
-        <div>
-          <strong>${escapeHtml(phase)}</strong>
-          <span>${escapeHtml(actionLabel(unit))}</span>
-        </div>
-        <div class="vector-risk ${Number(unit.currentRisk) < 0 ? "risk-good" : Number(unit.currentRisk) > 0 ? "risk-bad" : ""}">
-          ${escapeHtml(currentRiskLabel(unit))}
-        </div>
-      </div>
       ${commandBar}
       <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}">
         <div class="fill" style="width:${pct(unit)}"></div>
+        <div class="vector-bar-label">${escapeHtml(phase)}</div>
       </div>
       <div class="vector-phase-foot">
         <span>${escapeHtml(phaseVerb(unit))}</span>
@@ -536,7 +569,7 @@ function renderActivePanel() {
   activePanel.classList.toggle("clock-running", state.running && !state.pausedForTurn && !state.pausedForResolution && !state.hardPaused);
 
   if (activeAction) {
-    activeKicker.textContent = "Resolution Window";
+    activeKicker.textContent = "Resolve Action";
     activeTitle.textContent = `RESOLVE: ${activeAction.label}`;
     const attack = activeAction.action || {};
     const hit = attack.hitBonus === null || attack.hitBonus === undefined ? "No To-Hit" : `To-Hit ${signedNumber(attack.hitBonus)}`;
@@ -624,7 +657,7 @@ function renderPlayerCommand(mine) {
 
 function renderResolutionDialog() {
   if (mode === "gm" && state?.activeAction) {
-    turnDialogKicker.textContent = "Resolution Window";
+    turnDialogKicker.textContent = "Resolve Action";
     activeName.textContent = `RESOLVE: ${state.activeAction.label}`;
     activeOwner.textContent = `${state.activeAction.characterName} - ${state.activeAction.playerName}`;
     completeTurn.textContent = "Action Resolved";
@@ -711,13 +744,7 @@ function render() {
   renderRejoinOptions();
   renderResolutionDialog();
 
-  const sorted = [...state.units].sort((a, b) => {
-    if (state.activeId === a.id) return -1;
-    if (state.activeId === b.id) return 1;
-    if (state.activeAction?.unitId === a.id) return -1;
-    if (state.activeAction?.unitId === b.id) return 1;
-    return (b.phaseProgress || 0) - (a.phaseProgress || 0);
-  });
+  const sorted = [...state.units];
   renderUnitList(sorted);
 
   const mine = myUnit();
@@ -1127,6 +1154,8 @@ enableAlerts.addEventListener("click", () => {
 leaveRoom.addEventListener("click", () => returnToWelcome("Left the room. Create or join a room when ready."));
 
 gmAddUnit.addEventListener("click", () => {
+  const usingNpcDefault = gmTeam.value === "npc";
+  if (usingNpcDefault) applyNpcDefaultPreview();
   action({
     action: "addUnit",
     playerName: gmPlayerName.value || "GM",
@@ -1138,11 +1167,20 @@ gmAddUnit.addEventListener("click", () => {
     team: gmTeam.value,
     actorType: "character",
   });
-  gmCharacterName.value = "";
+  if (usingNpcDefault) {
+    nextNpcDefault();
+    applyNpcDefaultPreview({ force: true });
+  } else {
+    gmCharacterName.value = "";
+  }
 });
 
 gmTeam.addEventListener("change", () => {
   gmCommandWindowWrap.classList.toggle("hidden", gmTeam.value !== "pc");
+  if (gmTeam.value === "npc") {
+    nextNpcDefault();
+    applyNpcDefaultPreview({ force: true });
+  }
 });
 
 unitList.addEventListener("click", (event) => {
@@ -1207,5 +1245,7 @@ if (currentRoomCode && mode !== "welcome" && mode !== "roomJoin") {
       render();
     });
 } else {
+  nextNpcDefault();
+  applyNpcDefaultPreview({ force: true });
   render();
 }
