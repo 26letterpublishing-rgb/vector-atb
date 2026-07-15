@@ -185,8 +185,28 @@ const playerCommandDial = $("#playerCommandDial");
 const playerCommandTime = $("#playerCommandTime");
 const playerCommandStatus = $("#playerCommandStatus");
 const enableAlerts = $("#enableAlerts");
+const playerLogButton = $("#playerLogButton");
 const leaveRoom = $("#leaveRoom");
 const myUnitCard = $("#myUnitCard");
+const playerFocusScreen = $("#playerFocusScreen");
+const playerFocusEyebrow = $("#playerFocusEyebrow");
+const playerFocusCharacter = $("#playerFocusCharacter");
+const playerFocusLogButton = $("#playerFocusLogButton");
+const playerFocusRoomCode = $("#playerFocusRoomCode");
+const playerDecisionView = $("#playerDecisionView");
+const playerFocusTimer = $("#playerFocusTimer");
+const playerFocusCommandTime = $("#playerFocusCommandTime");
+const playerFocusPrompt = $("#playerFocusPrompt");
+const playerCommandTrackFill = $("#playerCommandTrackFill");
+const playerFocusActions = $("#playerFocusActions");
+const playerResolutionView = $("#playerResolutionView");
+const playerResolutionAction = $("#playerResolutionAction");
+const playerResolutionStatus = $("#playerResolutionStatus");
+const playerLogDrawer = $("#playerLogDrawer");
+const playerLogCommand = $("#playerLogCommand");
+const playerLogCommandTime = $("#playerLogCommandTime");
+const playerLogList = $("#playerLogList");
+const closePlayerLog = $("#closePlayerLog");
 const activePanel = $("#activePanel");
 const activeKicker = $("#activeKicker");
 const activeTitle = $("#activeTitle");
@@ -384,6 +404,28 @@ function actionButtonsMarkup(unit, { compact = false } = {}) {
   `;
 }
 
+function playerActionLabel(action) {
+  return {
+    move: "Move",
+    use_item: "Use Item",
+    defense: "Defense",
+    melee_attack: "Melee Attack",
+    fire_gun: "Fire Gun",
+    close_quarter: "Close Quarters",
+    reload_ready: "Reload / Ready",
+    improvised: "Improvised",
+  }[action.id] || action.label;
+}
+
+function playerActionButtonsMarkup(unit) {
+  if (!unit || state?.activeId !== unit.id || state?.activeAction) return "";
+  return actions().map((action) => `
+    <button type="button" class="player-action-choice action-${escapeHtml(action.id)}" data-action-id="${escapeHtml(action.id)}">
+      <span>${escapeHtml(playerActionLabel(action))}</span>
+    </button>
+  `).join("");
+}
+
 function maybeImprovisedAction(actionId) {
   if (actionId !== "improvised" || mode !== "gm") return null;
   const base = actionById("improvised");
@@ -563,7 +605,7 @@ function unitCard(unit, { gm = false, player = false } = {}) {
         <span>${escapeHtml(phaseVerb(unit))}</span>
         <span>Rate ${formatRate(unit.phaseRate || 0)}/sec</span>
       </div>
-      ${gm || own ? actionButtonsMarkup(unit, { compact: player }) : ""}
+      ${gm ? actionButtonsMarkup(unit) : ""}
     </article>
   `;
 }
@@ -650,41 +692,79 @@ function renderRejoinOptions() {
 
 function renderPlayerCommand(mine) {
   const command = commandFor(mine);
-  const isMyDecision = mine && state?.activeId === mine.id;
-  const isMyResolution = mine && state?.activeAction?.unitId === mine.id;
-  myTurnBanner.classList.toggle("hidden", !isMyDecision && !isMyResolution);
-  if (!mine) {
-    playerCommandDial.classList.add("hidden");
-    playerTurnActions.innerHTML = "";
+  const isMyDecision = Boolean(mine && state?.activeId === mine.id);
+  const isMyResolution = Boolean(mine && state?.activeAction?.unitId === mine.id);
+  const focusActive = mode === "player" && (isMyDecision || isMyResolution);
+
+  myTurnBanner.classList.add("hidden");
+  playerTurnActions.innerHTML = "";
+  playerFocusScreen.classList.toggle("hidden", !focusActive);
+  playerFocusScreen.classList.toggle("is-decision", isMyDecision);
+  playerFocusScreen.classList.toggle("is-resolution", isMyResolution);
+  document.body.classList.toggle("player-focus-active", focusActive);
+  if (!focusActive || !mine) {
+    playerFocusActions.innerHTML = "";
+    playerFocusActions.dataset.signature = "";
     return;
   }
+
+  playerFocusCharacter.textContent = mine.characterName;
+  playerFocusRoomCode.textContent = state.roomCode;
+  playerDecisionView.classList.toggle("hidden", !isMyDecision);
+  playerResolutionView.classList.toggle("hidden", !isMyResolution);
+
   if (isMyResolution) {
-    playerTurnTitle.textContent = "RESOLUTION";
-    playerCommandDial.classList.add("hidden");
-    playerCommandStatus.textContent = "GM is resolving your action.";
-    playerTurnActions.innerHTML = "";
+    const activeAction = state.activeAction;
+    playerFocusEyebrow.textContent = activeAction.overcommitted ? "Overcommit Active" : "Resolution";
+    playerResolutionAction.textContent = playerActionLabel(activeAction.action || activeAction);
+    playerResolutionStatus.textContent = activeAction.overcommitted ? "Damage increased - Recovery slowed" : "GM resolving";
     return;
   }
-  if (!isMyDecision) {
-    playerCommandDial.classList.add("hidden");
-    playerCommandStatus.textContent = "Watch the ATB flow.";
-    playerTurnActions.innerHTML = "";
+
+  const percent = command ? (command.expired ? 0 : commandPercent(command)) : 100;
+  const remaining = command ? command.remaining : 0;
+  playerFocusEyebrow.textContent = mine.decisionBoost ? "Decision x2" : "Decision Window";
+  playerFocusCommandTime.textContent = command ? formatSeconds(remaining) : "READY";
+  playerFocusPrompt.textContent = command?.expired ? "Choose now" : "Choose one action";
+  playerCommandTrackFill.style.width = `${percent}%`;
+  playerFocusTimer.style.setProperty("--command-percent", `${percent}%`);
+  playerFocusTimer.classList.toggle("urgent", Boolean(command && remaining <= 10 && remaining > 5));
+  playerFocusTimer.classList.toggle("critical", Boolean(command && remaining <= 5));
+
+  const actionSignature = `${mine.id}:${actions().map((entry) => `${entry.id}:${entry.label}`).join("|")}`;
+  if (playerFocusActions.dataset.signature !== actionSignature) {
+    playerFocusActions.innerHTML = playerActionButtonsMarkup(mine);
+    playerFocusActions.dataset.signature = actionSignature;
+  }
+}
+
+function renderPlayerLog(mine) {
+  if (mode !== "player" || !state) {
+    playerLogDrawer.classList.add("hidden");
+    document.body.classList.remove("player-log-open");
     return;
   }
-  playerTurnTitle.textContent = "DECISION";
-  playerCommandDial.classList.toggle("hidden", !command);
-  if (command) {
-    playerCommandDial.style.setProperty("--command-percent", `${command.expired ? 0 : commandPercent(command)}%`);
-    playerCommandTime.textContent = formatSeconds(command.remaining);
-    playerCommandStatus.textContent = command.expired
-      ? "Your action is about to be interrupted!"
-      : command.remaining <= 10
-        ? "Choose fast!"
-        : "Choose one action.";
-  } else {
-    playerCommandStatus.textContent = "Choose one action.";
-  }
-  playerTurnActions.innerHTML = actionButtonsMarkup(mine, { compact: true });
+  playerLogList.innerHTML = state.log
+    .slice()
+    .reverse()
+    .map((entry) => `<article><time>${escapeHtml(entry.at)}</time><p>${escapeHtml(entry.text)}</p></article>`)
+    .join("");
+  const command = commandFor(mine);
+  const showCommand = Boolean(mine && state.activeId === mine.id && command);
+  playerLogCommand.classList.toggle("hidden", !showCommand);
+  if (showCommand) playerLogCommandTime.textContent = formatSeconds(command.remaining);
+}
+
+function openPlayerLog() {
+  if (mode !== "player" || !state) return;
+  playerLogDrawer.classList.remove("hidden");
+  document.body.classList.add("player-log-open");
+  closePlayerLog.focus();
+}
+
+function closePlayerLogDrawer() {
+  playerLogDrawer.classList.add("hidden");
+  document.body.classList.remove("player-log-open");
 }
 
 function closeStaggerDialog() {
@@ -787,13 +867,13 @@ function render() {
   roomJoinPanel.classList.toggle("hidden", mode !== "roomJoin");
   joinPanel.classList.toggle("hidden", mode !== "join");
   gmPanel.classList.toggle("hidden", mode !== "gm");
-  playerPanel.classList.toggle("hidden", mode !== "player");
+  playerPanel.classList.add("hidden");
   gmTopControls.classList.toggle("hidden", mode !== "gm");
   playerTopControls.classList.toggle("hidden", mode !== "player");
   topbar.classList.toggle("hidden", mode === "welcome");
   connectionStatus.classList.toggle("hidden", mode === "welcome");
   initiativePanel.classList.toggle("hidden", mode === "welcome" || mode === "roomJoin" || mode === "join");
-  logPanel.classList.toggle("hidden", mode === "welcome" || mode === "roomJoin" || mode === "join");
+  logPanel.classList.toggle("hidden", mode === "player" || mode === "welcome" || mode === "roomJoin" || mode === "join");
   document.body.classList.toggle("welcome-mode", mode === "welcome");
   document.body.classList.toggle("player-mode", mode === "player");
   document.body.classList.toggle("clock-active", Boolean(state?.running) && !state?.pausedForTurn && !state?.pausedForResolution && !state?.hardPaused);
@@ -816,6 +896,9 @@ function render() {
     gmMuteSound.classList.add("hidden");
     visualModeToggle.classList.add("hidden");
     playerPoiseButton.classList.add("hidden");
+    playerFocusScreen.classList.add("hidden");
+    document.body.classList.remove("player-focus-active");
+    closePlayerLogDrawer();
     closeStaggerDialog();
     closePoiseDialog();
     return;
@@ -843,6 +926,7 @@ function render() {
   myUnitCard.innerHTML = "";
   renderPlayerCommand(mine);
   renderPoiseControls(mine);
+  renderPlayerLog(mine);
 
   logList.innerHTML = state.log
     .slice()
@@ -1038,6 +1122,17 @@ function tone(frequency, start, duration, gainValue = 0.04, type = "square") {
   osc.stop(audio.currentTime + start + duration + 0.02);
 }
 
+function playCombatStartSting() {
+  const pulse = [82.41, 82.41, 110, 146.83];
+  pulse.forEach((frequency, index) => tone(frequency, index * 0.42, 0.38, 0.032, "triangle"));
+  [220, 293.66, 369.99, 440, 587.33, 739.99].forEach((frequency, index) => {
+    tone(frequency, 0.05 + index * 0.25, 0.2, 0.018, index % 2 ? "sine" : "square");
+  });
+  tone(220, 1.55, 0.62, 0.026, "triangle");
+  tone(440, 1.55, 0.62, 0.022, "sine");
+  tone(659.25, 1.62, 0.54, 0.016, "sine");
+}
+
 function playGmSound(name = "tap") {
   if (gmSoundsMuted) return;
   try {
@@ -1047,9 +1142,7 @@ function playGmSound(name = "tap") {
       return;
     }
     if (name === "firstStart") {
-      const alarm = new Audio("alarm-noise.mp4");
-      alarm.volume = 0.72;
-      alarm.play().catch(() => tone(180, 0, 0.18, 0.055, "sawtooth"));
+      playCombatStartSting();
       return;
     }
     if (name === "pause") {
@@ -1105,8 +1198,7 @@ function vibrationAvailable() {
 }
 
 function playerAlertLabel() {
-  const alertType = vibrationAvailable() ? "Sound / Vibration" : "Sound";
-  return alertsEnabled ? `Disable ${alertType}` : `Enable ${alertType}`;
+  return alertsEnabled ? "Sound: On" : "Sound: Off";
 }
 
 function enablePlayerAlerts({ testSound = false } = {}) {
@@ -1325,6 +1417,19 @@ playerTurnActions.addEventListener("click", (event) => {
   if (!button) return;
   const unitId = button.closest("[data-action-unit]")?.dataset.actionUnit || myUnitId;
   chooseAction(unitId, button.dataset.actionId);
+});
+
+playerFocusActions.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-action-id]");
+  if (!button || !myUnitId) return;
+  chooseAction(myUnitId, button.dataset.actionId);
+});
+
+playerLogButton.addEventListener("click", openPlayerLog);
+playerFocusLogButton.addEventListener("click", openPlayerLog);
+closePlayerLog.addEventListener("click", closePlayerLogDrawer);
+playerLogDrawer.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closePlayerLogDrawer();
 });
 
 unitList.addEventListener("change", (event) => {
