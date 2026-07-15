@@ -12,6 +12,9 @@ let lastNotifiedActiveId = "";
 let lastCommandWarningKey = "";
 let lastInterruptedNotice = "";
 let lastGmClockClickAt = 0;
+let playerActionRequestPending = false;
+let playerActionPointer = null;
+let lastPlayerPointerActivationAt = Number.NEGATIVE_INFINITY;
 
 const DEFAULT_BASELINE = 7;
 const DEFAULT_COMMAND_WINDOW = 20;
@@ -483,6 +486,47 @@ async function chooseAction(unitId, actionId) {
   }, "start");
 }
 
+function resetPlayerActionSubmission() {
+  playerActionRequestPending = false;
+  playerFocusActions.removeAttribute("aria-busy");
+  for (const choice of playerFocusActions.querySelectorAll("button[data-action-id]")) {
+    choice.disabled = false;
+    choice.classList.remove("is-pending");
+    choice.removeAttribute("aria-disabled");
+  }
+}
+
+async function submitPlayerAction(button) {
+  if (!button || !myUnitId || playerActionRequestPending) return;
+  if (state?.activeId !== myUnitId || state?.activeAction) return;
+
+  const actionId = button.dataset.actionId;
+  if (!actionId) return;
+
+  const unitId = myUnitId;
+  playerActionRequestPending = true;
+  playerFocusActions.setAttribute("aria-busy", "true");
+  playerFocusPrompt.textContent = "Locking action";
+
+  for (const choice of playerFocusActions.querySelectorAll("button[data-action-id]")) {
+    const selected = choice === button;
+    choice.disabled = true;
+    choice.classList.toggle("is-pending", selected);
+    choice.setAttribute("aria-disabled", "true");
+  }
+
+  try {
+    await chooseAction(unitId, actionId);
+  } finally {
+    playerActionRequestPending = false;
+    if (state?.activeId === unitId && !state?.activeAction) {
+      resetPlayerActionSubmission();
+      const command = commandFor(state.units.find((unit) => unit.id === unitId));
+      playerFocusPrompt.textContent = command?.expired ? "Choose now" : "Choose one action";
+    }
+  }
+}
+
 function barStyle(unit) {
   const color = unit?.color || "#39e58f";
   const rgb = hexToRgb(color);
@@ -713,8 +757,11 @@ function renderPlayerCommand(mine) {
   playerFocusScreen.classList.toggle("is-resolution", isMyResolution);
   document.body.classList.toggle("player-focus-active", focusActive);
   if (!focusActive || !mine) {
+    playerActionRequestPending = false;
+    playerActionPointer = null;
     playerFocusActions.innerHTML = "";
     playerFocusActions.dataset.signature = "";
+    playerFocusActions.removeAttribute("aria-busy");
     return;
   }
 
@@ -724,6 +771,9 @@ function renderPlayerCommand(mine) {
   playerResolutionView.classList.toggle("hidden", !isMyResolution);
 
   if (isMyResolution) {
+    playerActionRequestPending = false;
+    playerActionPointer = null;
+    playerFocusActions.removeAttribute("aria-busy");
     const activeAction = state.activeAction;
     playerFocusEyebrow.textContent = activeAction.overcommitted ? "Overcommit Active" : "Resolution";
     playerResolutionAction.textContent = playerActionLabel(activeAction.action || activeAction);
@@ -1428,10 +1478,40 @@ playerTurnActions.addEventListener("click", (event) => {
   chooseAction(unitId, button.dataset.actionId);
 });
 
+playerFocusActions.addEventListener("pointerdown", (event) => {
+  const button = event.target.closest("button[data-action-id]");
+  if (!button || button.disabled || !event.isPrimary || !["touch", "pen"].includes(event.pointerType)) return;
+  playerActionPointer = {
+    id: event.pointerId,
+    button,
+    x: event.clientX,
+    y: event.clientY,
+  };
+});
+
+playerFocusActions.addEventListener("pointercancel", (event) => {
+  if (playerActionPointer?.id === event.pointerId) playerActionPointer = null;
+});
+
+playerFocusActions.addEventListener("pointerup", (event) => {
+  const pointer = playerActionPointer;
+  if (!pointer || pointer.id !== event.pointerId) return;
+  playerActionPointer = null;
+
+  const moved = Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y);
+  const releasedButton = event.target.closest("button[data-action-id]");
+  if (moved > 16 || releasedButton !== pointer.button) return;
+
+  event.preventDefault();
+  lastPlayerPointerActivationAt = performance.now();
+  submitPlayerAction(pointer.button);
+});
+
 playerFocusActions.addEventListener("click", (event) => {
   const button = event.target.closest("button[data-action-id]");
-  if (!button || !myUnitId) return;
-  chooseAction(myUnitId, button.dataset.actionId);
+  if (!button || button.disabled || !myUnitId) return;
+  if (performance.now() - lastPlayerPointerActivationAt < 750) return;
+  submitPlayerAction(button);
 });
 
 playerLogButton.addEventListener("click", openPlayerLog);

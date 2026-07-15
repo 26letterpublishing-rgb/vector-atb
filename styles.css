@@ -3975,7 +3975,6 @@ h2 {
   border: 1px solid rgba(var(--action-accent), 0.58);
   border-radius: 4px;
   --action-accent: 40, 215, 255;
-  clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 13px 100%, 0 calc(100% - 13px));
   background:
     linear-gradient(125deg, rgba(var(--action-accent), 0.18), transparent 44%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 28%),
@@ -3987,6 +3986,10 @@ h2 {
     0 8px 24px rgba(0, 0, 0, 0.34),
     0 0 18px rgba(var(--action-accent), 0.08);
   color: #fff;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
   text-shadow: 0 2px 3px #000;
   transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
@@ -4026,9 +4029,9 @@ h2 {
   line-height: 1.1;
   letter-spacing: 0;
   text-align: left;
+  pointer-events: none;
 }
 
-.player-action-choice:hover,
 .player-action-choice:focus-visible {
   border-color: rgba(var(--action-accent), 0.92);
   background:
@@ -4039,9 +4042,55 @@ h2 {
   transform: translateY(-2px);
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .player-action-choice:hover {
+    border-color: rgba(var(--action-accent), 0.92);
+    background:
+      linear-gradient(125deg, rgba(var(--action-accent), 0.28), transparent 54%),
+      linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 30%),
+      rgba(7, 13, 14, 0.97);
+    box-shadow: 0 0 27px rgba(var(--action-accent), 0.25);
+    transform: translateY(-2px);
+  }
+}
+
 .player-action-choice:active {
   box-shadow: inset 0 0 28px rgba(var(--action-accent), 0.3);
   transform: translateY(1px) scale(0.985);
+}
+
+.player-focus-actions[aria-busy="true"] .player-action-choice:not(.is-pending) {
+  opacity: 0.28;
+  filter: saturate(0.25) brightness(0.7);
+}
+
+.player-action-choice.is-pending,
+.player-action-choice.is-pending:disabled {
+  border-color: rgb(var(--action-accent));
+  background:
+    linear-gradient(90deg, rgba(var(--action-accent), 0.4), rgba(var(--action-accent), 0.08)),
+    rgba(7, 13, 14, 0.98);
+  box-shadow:
+    inset 0 0 24px rgba(var(--action-accent), 0.22),
+    0 0 30px rgba(var(--action-accent), 0.42);
+  color: #fff;
+  opacity: 1;
+  filter: none;
+  animation: playerActionLock 420ms ease-in-out infinite alternate;
+}
+
+.player-action-choice.is-pending::after {
+  content: "LOCKING";
+  right: 12px;
+  bottom: 9px;
+  font-size: 0.66rem;
+  letter-spacing: 0;
+  opacity: 0.92;
+}
+
+@keyframes playerActionLock {
+  from { filter: brightness(0.92); }
+  to { filter: brightness(1.2); }
 }
 
 .player-action-choice.action-use_item { --action-accent: 57, 229, 143; }
