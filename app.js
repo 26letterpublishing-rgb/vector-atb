@@ -16,7 +16,7 @@ let playerActionRequestPending = false;
 let playerActionPointer = null;
 let lastPlayerPointerActivationAt = Number.NEGATIVE_INFINITY;
 
-const DEFAULT_BASELINE = 7;
+const DEFAULT_BASELINE = 25;
 const DEFAULT_COMMAND_WINDOW = 20;
 const KEEP_ALIVE_MS = 30000;
 
@@ -123,15 +123,15 @@ let npcDefaultBag = [];
 let currentNpcDefault = null;
 
 const npcDefaults = [
-  { characterName: "Security Guard", baseline: 5, color: "#39e58f" },
-  { characterName: "Street Tough", baseline: 6, color: "#f07a4a" },
-  { characterName: "Corporate Agent", baseline: 8, color: "#35b7ff" },
-  { characterName: "Civilian", baseline: 4, color: "#f2d16b" },
-  { characterName: "Drone Handler", baseline: 7, color: "#20f5d0" },
-  { characterName: "Police Exo", baseline: 9, color: "#ff5fa2" },
-  { characterName: "Fast Operative", baseline: 11, color: "#a65cff" },
-  { characterName: "Heavy Enforcer", baseline: 3, color: "#ff3d55" },
-  { characterName: "Vector Anomaly", baseline: 12, color: "#8bd7ff" },
+  { characterName: "Security Guard", baseline: 22, color: "#39e58f" },
+  { characterName: "Street Tough", baseline: 23, color: "#f07a4a" },
+  { characterName: "Corporate Agent", baseline: 26, color: "#35b7ff" },
+  { characterName: "Civilian", baseline: 20, color: "#f2d16b" },
+  { characterName: "Drone Handler", baseline: 25, color: "#20f5d0" },
+  { characterName: "Police Exo", baseline: 27, color: "#ff5fa2" },
+  { characterName: "Fast Operative", baseline: 29, color: "#a65cff" },
+  { characterName: "Heavy Enforcer", baseline: 18, color: "#ff3d55" },
+  { characterName: "Vector Anomaly", baseline: 30, color: "#8bd7ff" },
 ];
 
 function $(selector) {
@@ -289,7 +289,7 @@ function applyNpcDefaultPreview({ force = false } = {}) {
   if (!gmTeam || gmTeam.value !== "npc") return;
   const preview = currentNpcDefault || nextNpcDefault();
   if (force || !gmCharacterName.value.trim()) gmCharacterName.value = preview.characterName;
-  if (force || !gmSpeedRating.value.trim() || gmSpeedRating.value === "7") gmSpeedRating.value = preview.baseline;
+  if (force || !gmSpeedRating.value.trim() || gmSpeedRating.value === String(DEFAULT_BASELINE)) gmSpeedRating.value = preview.baseline;
   if (force || !gmColor.value) gmColor.value = preview.color;
 }
 
