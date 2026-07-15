@@ -6,6 +6,8 @@ let alertsEnabled = localStorage.getItem("vector-atb-alerts") === "on";
 let gmSoundsMuted = localStorage.getItem("vector-atb-gm-muted") === "on";
 let events = null;
 let audioContext = null;
+const combatStartAudio = new Audio("vector-combat-intro.mp4");
+combatStartAudio.preload = "auto";
 let lastNotifiedActiveId = "";
 let lastCommandWarningKey = "";
 let lastInterruptedNotice = "";
@@ -419,8 +421,8 @@ function playerActionLabel(action) {
 
 function playerActionButtonsMarkup(unit) {
   if (!unit || state?.activeId !== unit.id || state?.activeAction) return "";
-  return actions().map((action) => `
-    <button type="button" class="player-action-choice action-${escapeHtml(action.id)}" data-action-id="${escapeHtml(action.id)}">
+  return actions().map((action, index) => `
+    <button type="button" class="player-action-choice action-${escapeHtml(action.id)}" data-action-id="${escapeHtml(action.id)}" data-index="${String(index + 1).padStart(2, "0")}">
       <span>${escapeHtml(playerActionLabel(action))}</span>
     </button>
   `).join("");
@@ -469,6 +471,8 @@ function maybeImprovisedAction(actionId) {
 }
 
 async function chooseAction(unitId, actionId) {
+  const unit = state?.units.find((entry) => entry.id === unitId);
+  if (mode === "gm" && unit?.controlledBy === "player") return;
   const customAction = maybeImprovisedAction(actionId);
   if (customAction === false) return;
   await action({
@@ -526,6 +530,7 @@ function unitCard(unit, { gm = false, player = false } = {}) {
   const active = state?.activeId === unit.id;
   const resolving = state?.activeAction?.unitId === unit.id;
   const own = player && unit.id === myUnitId;
+  const awaitingPlayerDecision = gm && active && unit.controlledBy === "player" && !resolving;
   const phase = phaseLabel(unit);
   const side = unit.team === "pc" ? "PC" : "NPC";
   const command = commandFor(unit);
@@ -551,7 +556,7 @@ function unitCard(unit, { gm = false, player = false } = {}) {
           <div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - Base ${formatRate(unit.baseline)}${unit.commandWindow ? ` - ${unit.commandWindow} sec Command` : ""}</div>
         </div>
         <div class="vector-action-readout">
-          <strong>${escapeHtml(actionLabel(unit))}</strong>
+          <strong>${escapeHtml(awaitingPlayerDecision ? "Awaiting Player" : actionLabel(unit))}</strong>
           <span class="${Number(unit.currentRisk) < 0 ? "risk-good" : Number(unit.currentRisk) > 0 ? "risk-bad" : ""}">${escapeHtml(currentRiskLabel(unit))}</span>
         </div>
         ${gmCardTools}
@@ -599,13 +604,13 @@ function unitCard(unit, { gm = false, player = false } = {}) {
       ${commandBar}
       <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}">
         <div class="fill" style="width:${pct(unit)}"></div>
-        <div class="vector-bar-label">${escapeHtml(phase)}</div>
+        <div class="vector-bar-label">${escapeHtml(awaitingPlayerDecision ? "AWAITING PLAYER DECISION" : phase)}</div>
       </div>
       <div class="vector-phase-foot">
-        <span>${escapeHtml(phaseVerb(unit))}</span>
+        <span>${escapeHtml(awaitingPlayerDecision ? "Player selecting action" : phaseVerb(unit))}</span>
         <span>Rate ${formatRate(unit.phaseRate || 0)}/sec</span>
       </div>
-      ${gm ? actionButtonsMarkup(unit) : ""}
+      ${gm && !awaitingPlayerDecision ? actionButtonsMarkup(unit) : ""}
     </article>
   `;
 }
@@ -654,9 +659,14 @@ function renderActivePanel() {
 
   if (active) {
     activeKicker.textContent = "Decision Window";
-    activeTitle.textContent = `${active.characterName}: choose action`;
     const command = commandFor(active);
-    activeMeta.textContent = command ? `${formatSeconds(command.remaining)} Command Window` : "NPC decision paused";
+    if (mode === "gm" && active.controlledBy === "player") {
+      activeTitle.textContent = "Awaiting player decision";
+      activeMeta.textContent = command ? `${active.characterName} - ${formatSeconds(command.remaining)} Command Window` : active.characterName;
+    } else {
+      activeTitle.textContent = `${active.characterName}: choose action`;
+      activeMeta.textContent = command ? `${formatSeconds(command.remaining)} Command Window` : "NPC decision paused";
+    }
     return;
   }
 
@@ -728,6 +738,8 @@ function renderPlayerCommand(mine) {
   playerFocusPrompt.textContent = command?.expired ? "Choose now" : "Choose one action";
   playerCommandTrackFill.style.width = `${percent}%`;
   playerFocusTimer.style.setProperty("--command-percent", `${percent}%`);
+  playerFocusTimer.style.setProperty("--command-elapsed", `${100 - percent}%`);
+  playerFocusTimer.style.setProperty("--timer-hue", `${Math.round(percent * 1.2)}deg`);
   playerFocusTimer.classList.toggle("urgent", Boolean(command && remaining <= 10 && remaining > 5));
   playerFocusTimer.classList.toggle("critical", Boolean(command && remaining <= 5));
 
@@ -1123,14 +1135,11 @@ function tone(frequency, start, duration, gainValue = 0.04, type = "square") {
 }
 
 function playCombatStartSting() {
-  const pulse = [82.41, 82.41, 110, 146.83];
-  pulse.forEach((frequency, index) => tone(frequency, index * 0.42, 0.38, 0.032, "triangle"));
-  [220, 293.66, 369.99, 440, 587.33, 739.99].forEach((frequency, index) => {
-    tone(frequency, 0.05 + index * 0.25, 0.2, 0.018, index % 2 ? "sine" : "square");
-  });
-  tone(220, 1.55, 0.62, 0.026, "triangle");
-  tone(440, 1.55, 0.62, 0.022, "sine");
-  tone(659.25, 1.62, 0.54, 0.016, "sine");
+  combatStartAudio.pause();
+  combatStartAudio.currentTime = 0;
+  combatStartAudio.volume = 0.9;
+  const playback = combatStartAudio.play();
+  if (playback?.catch) playback.catch(() => {});
 }
 
 function playGmSound(name = "tap") {

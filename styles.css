@@ -3828,41 +3828,56 @@ h2 {
 
 .player-focus-timer {
   --command-percent: 100%;
+  --command-elapsed: 0%;
+  --timer-hue: 120deg;
+  --timer-color: hsl(var(--timer-hue) 88% 54%);
   display: grid;
-  grid-template-columns: 136px minmax(0, 1fr);
-  min-height: 136px;
-  align-items: center;
-  gap: 20px;
-  padding: 12px 18px;
-  border: 1px solid rgba(255, 208, 90, 0.46);
-  border-radius: 8px;
-  background: rgba(12, 15, 12, 0.9);
-  box-shadow:
-    inset 0 1px rgba(255, 255, 255, 0.06),
-    0 14px 36px rgba(0, 0, 0, 0.3);
+  min-height: 218px;
+  justify-items: center;
+  align-content: center;
+  gap: 9px;
+  padding: 8px 18px;
+  text-align: center;
 }
 
 .player-focus-dial {
   position: relative;
   display: grid;
-  width: 112px;
-  height: 112px;
+  width: 154px;
+  height: 154px;
   place-content: center;
   justify-self: center;
   border-radius: 50%;
-  background: conic-gradient(#ffd05a var(--command-percent), rgba(255, 255, 255, 0.09) 0);
+  background: conic-gradient(
+    from 0deg,
+    transparent 0 var(--command-elapsed),
+    var(--timer-color) var(--command-elapsed) 100%
+  );
   color: #fff;
   text-align: center;
-  box-shadow: 0 0 28px rgba(255, 208, 90, 0.18);
+  filter: drop-shadow(0 0 17px var(--timer-color));
+  animation: playerDialBreathe 1.15s ease-in-out infinite alternate;
 }
 
 .player-focus-dial::before {
   content: "";
   position: absolute;
-  inset: 8px;
+  inset: -8px;
   border-radius: 50%;
-  background: #090d0b;
-  box-shadow: inset 0 0 22px rgba(0, 0, 0, 0.7);
+  border: 2px solid var(--timer-color);
+  box-shadow:
+    inset 0 0 18px color-mix(in srgb, var(--timer-color) 38%, transparent),
+    0 0 18px color-mix(in srgb, var(--timer-color) 38%, transparent);
+  opacity: 0.68;
+}
+
+.player-focus-dial::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: repeating-linear-gradient(0deg, transparent 0 5px, rgba(0, 0, 0, 0.1) 5px 7px);
+  pointer-events: none;
 }
 
 .player-focus-dial strong,
@@ -3872,22 +3887,31 @@ h2 {
 }
 
 .player-focus-dial strong {
-  font-size: 1.85rem;
+  font-size: 2.2rem;
   line-height: 1;
+  text-shadow:
+    0 2px 0 #000,
+    0 0 9px #000;
+  -webkit-text-stroke: 1px rgba(0, 0, 0, 0.86);
 }
 
 .player-focus-dial span {
   margin-top: 5px;
-  color: #d9c887;
+  color: #fff;
   font-size: 0.62rem;
   font-weight: 900;
+  text-shadow: 0 1px 4px #000;
   text-transform: uppercase;
 }
 
+.player-focus-prompt {
+  width: min(560px, 100%);
+}
+
 .player-focus-prompt h1 {
-  margin: 5px 0 18px;
+  margin: 3px 0 9px;
   color: #fff;
-  font-size: 2rem;
+  font-size: 1.7rem;
   line-height: 1.05;
   letter-spacing: 0;
 }
@@ -3904,40 +3928,31 @@ h2 {
 #playerCommandTrackFill {
   width: 100%;
   height: 100%;
-  background: #ffd05a;
-  box-shadow: 0 0 14px rgba(255, 208, 90, 0.42);
+  background: var(--timer-color);
+  box-shadow: 0 0 14px var(--timer-color);
   transition: width 100ms linear;
 }
 
 .player-focus-timer.urgent {
-  border-color: rgba(255, 148, 77, 0.72);
-}
-
-.player-focus-timer.urgent .player-focus-dial {
-  background: conic-gradient(#ff944d var(--command-percent), rgba(255, 255, 255, 0.09) 0);
-}
-
-.player-focus-timer.urgent #playerCommandTrackFill {
-  background: #ff944d;
+  animation: playerTimerPulse 720ms ease-in-out infinite alternate;
 }
 
 .player-focus-timer.critical {
-  border-color: rgba(255, 79, 105, 0.86);
-  animation: playerTimerPulse 600ms ease-in-out infinite alternate;
+  animation: playerTimerPulse 360ms ease-in-out infinite alternate;
 }
 
 .player-focus-timer.critical .player-focus-dial {
-  background: conic-gradient(#ff4f69 var(--command-percent), rgba(255, 255, 255, 0.09) 0);
-  box-shadow: 0 0 30px rgba(255, 79, 105, 0.36);
-}
-
-.player-focus-timer.critical #playerCommandTrackFill {
-  background: #ff4f69;
+  animation-duration: 420ms;
 }
 
 @keyframes playerTimerPulse {
-  from { box-shadow: 0 0 8px rgba(255, 79, 105, 0.12); }
-  to { box-shadow: 0 0 30px rgba(255, 79, 105, 0.36); }
+  from { transform: scale(1); }
+  to { transform: scale(1.018); }
+}
+
+@keyframes playerDialBreathe {
+  from { filter: drop-shadow(0 0 10px var(--timer-color)); }
+  to { filter: drop-shadow(0 0 27px var(--timer-color)); }
 }
 
 .player-focus-actions {
@@ -3950,39 +3965,63 @@ h2 {
 }
 
 .player-action-choice {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   width: 100%;
   max-width: none;
   min-height: 64px;
-  padding: 10px 12px;
-  border-radius: 8px;
+  padding: 14px 48px 14px 18px;
+  border: 1px solid rgba(var(--action-accent), 0.58);
+  border-radius: 4px;
   --action-accent: 40, 215, 255;
-  border-color: rgba(var(--action-accent), 0.5);
+  clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 13px 100%, 0 calc(100% - 13px));
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.11), transparent 38%),
-    rgba(9, 15, 16, 0.94);
+    linear-gradient(125deg, rgba(var(--action-accent), 0.18), transparent 44%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 28%),
+    repeating-linear-gradient(135deg, transparent 0 11px, rgba(var(--action-accent), 0.035) 11px 12px),
+    rgba(7, 13, 14, 0.97);
   box-shadow:
-    inset 0 0 0 1px rgba(var(--action-accent), 0.08),
-    0 8px 24px rgba(0, 0, 0, 0.28);
+    inset 0 0 0 1px rgba(var(--action-accent), 0.1),
+    inset 0 -22px 40px rgba(0, 0, 0, 0.32),
+    0 8px 24px rgba(0, 0, 0, 0.34),
+    0 0 18px rgba(var(--action-accent), 0.08);
   color: #fff;
-  text-shadow: none;
+  text-shadow: 0 2px 3px #000;
+  transition: transform 120ms ease, border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 
 .player-action-choice::before {
   left: 0;
   right: auto;
   top: 0;
-  width: 5px;
+  width: 7px;
   height: 100%;
-  border-radius: 7px 0 0 7px;
+  border-radius: 0;
   background: rgb(var(--action-accent));
-  opacity: 0.9;
+  box-shadow: 0 0 17px rgba(var(--action-accent), 0.78);
+  opacity: 1;
+}
+
+.player-action-choice::after {
+  content: attr(data-index);
+  position: absolute;
+  z-index: -1;
+  right: 10px;
+  bottom: -9px;
+  color: rgb(var(--action-accent));
+  font-size: 3.5rem;
+  font-weight: 900;
+  line-height: 1;
+  opacity: 0.16;
+  text-shadow: none;
 }
 
 .player-action-choice span {
   position: relative;
   z-index: 1;
   display: block;
-  font-size: 1.08rem;
+  font-size: 1.15rem;
   font-weight: 900;
   line-height: 1.1;
   letter-spacing: 0;
@@ -3992,7 +4031,17 @@ h2 {
 .player-action-choice:hover,
 .player-action-choice:focus-visible {
   border-color: rgba(var(--action-accent), 0.92);
-  box-shadow: 0 0 20px rgba(var(--action-accent), 0.2);
+  background:
+    linear-gradient(125deg, rgba(var(--action-accent), 0.28), transparent 54%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), transparent 30%),
+    rgba(7, 13, 14, 0.97);
+  box-shadow: 0 0 27px rgba(var(--action-accent), 0.25);
+  transform: translateY(-2px);
+}
+
+.player-action-choice:active {
+  box-shadow: inset 0 0 28px rgba(var(--action-accent), 0.3);
+  transform: translateY(1px) scale(0.985);
 }
 
 .player-action-choice.action-use_item { --action-accent: 57, 229, 143; }
@@ -4318,23 +4367,22 @@ h2 {
   }
 
   .player-focus-timer {
-    grid-template-columns: 80px minmax(0, 1fr);
-    min-height: 84px;
-    gap: 10px;
-    padding: 7px 9px;
+    min-height: 154px;
+    gap: 6px;
+    padding: 4px 8px;
   }
 
   .player-focus-dial {
-    width: 72px;
-    height: 72px;
+    width: 104px;
+    height: 104px;
   }
 
   .player-focus-dial::before {
-    inset: 6px;
+    inset: -5px;
   }
 
   .player-focus-dial strong {
-    font-size: 1.3rem;
+    font-size: 1.55rem;
   }
 
   .player-focus-dial span {
@@ -4347,8 +4395,8 @@ h2 {
   }
 
   .player-focus-prompt h1 {
-    margin: 3px 0 9px;
-    font-size: 1.3rem;
+    margin: 2px 0 7px;
+    font-size: 1.22rem;
   }
 
   .player-command-track {
@@ -4364,11 +4412,17 @@ h2 {
 
   .player-action-choice {
     min-height: 48px;
-    padding: 6px 10px;
+    padding: 8px 36px 8px 14px;
   }
 
   .player-action-choice span {
     font-size: 1.05rem;
+  }
+
+  .player-action-choice::after {
+    right: 7px;
+    bottom: -6px;
+    font-size: 2.65rem;
   }
 
   .player-resolution-view {
@@ -4453,21 +4507,35 @@ h2 {
   }
 
   .player-focus-timer {
-    min-height: 68px;
+    min-height: 96px;
+    gap: 2px;
   }
 
   .player-focus-dial {
-    width: 58px;
-    height: 58px;
+    width: 74px;
+    height: 74px;
   }
 
   .player-focus-dial strong {
-    font-size: 1.05rem;
+    font-size: 1.15rem;
+  }
+
+  .player-focus-dial span {
+    margin-top: 1px;
+    font-size: 0.44rem;
   }
 
   .player-focus-prompt h1 {
-    margin-bottom: 5px;
-    font-size: 1.12rem;
+    margin-bottom: 3px;
+    font-size: 1rem;
+  }
+
+  .player-focus-prompt p {
+    font-size: 0.54rem;
+  }
+
+  .player-command-track {
+    height: 5px;
   }
 
   .player-decision-view {
