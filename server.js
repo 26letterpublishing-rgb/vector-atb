@@ -533,17 +533,24 @@ function spendPoise(room, unit, use) {
   if (!unit) return false;
   const tracksPoise = unit.team === "pc";
   if (tracksPoise && (Number(unit.poiseRemaining) || 0) <= 0) return false;
+  let releasedPause = false;
+  let outcome = "";
 
   if (use === "brace") {
     if (unit.braceActive) return false;
     unit.braceActive = true;
   } else if (use === "snapBack") {
-    if (unit.phase !== "stagger") return false;
+    const cancelledLabel = room.activeAction?.unitId === unit.id
+      ? room.activeAction.label
+      : unit.currentAction?.label || String(unit.phase || "current state").toUpperCase();
+    releasedPause = cancelPausedActionFor(room, unit);
     unit.phase = "decision";
     unit.phaseProgress = 0;
     unit.staggerRate = null;
     unit.currentAction = null;
     unit.decisionBoost = true;
+    unit.commandExpired = false;
+    outcome = ` ${cancelledLabel} was voided; DECISION x2.`;
   } else if (use === "overcommit") {
     if (room.activeAction?.unitId !== unit.id || !unit.currentAction || unit.currentAction.overcommitted) return false;
     unit.currentAction.overcommitted = true;
@@ -556,7 +563,8 @@ function spendPoise(room, unit, use) {
   if (tracksPoise) unit.poiseRemaining -= 1;
   const labels = { brace: "BRACE", snapBack: "SNAP BACK", overcommit: "OVERCOMMIT" };
   const remaining = tracksPoise ? ` (${unit.poiseRemaining} Poise remaining)` : "";
-  pushLog(room, `${unit.characterName} spent Poise: ${labels[use]}${remaining}.`);
+  pushLog(room, `${unit.characterName} spent Poise: ${labels[use]}${remaining}.${outcome}`);
+  if (releasedPause) moveToNextOrClock(room);
   return true;
 }
 

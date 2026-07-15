@@ -3515,8 +3515,14 @@ h2 {
   display: grid;
   place-items: center;
   padding: 20px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(8px);
+}
+
+body.poise-modal-open {
+  overflow: hidden;
 }
 
 .vector-modal-panel {
@@ -3583,6 +3589,8 @@ h2 {
   padding: 12px 14px;
   border-radius: 7px;
   text-align: left;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .poise-choice-list strong,
@@ -3602,8 +3610,30 @@ h2 {
 }
 
 .poise-choice-list button:disabled {
+  cursor: not-allowed;
   opacity: 0.34;
   filter: grayscale(1);
+}
+
+#cancelPoise,
+.player-poise-button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@media (max-width: 720px) {
+  .poise-panel .vector-modal-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+
+  .poise-panel #cancelPoise {
+    width: 100%;
+    max-width: none;
+    min-height: 52px;
+    border-radius: 7px;
+  }
 }
 
 .phase-stagger .vector-phase-line {

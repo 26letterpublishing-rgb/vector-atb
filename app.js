@@ -496,6 +496,38 @@ function resetPlayerActionSubmission() {
   }
 }
 
+function bindReliableTap(button, activate) {
+  let pointer = null;
+  let lastPointerActivationAt = Number.NEGATIVE_INFINITY;
+
+  button.addEventListener("pointerdown", (event) => {
+    if (button.disabled || !event.isPrimary || !["touch", "pen"].includes(event.pointerType)) return;
+    pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  });
+
+  button.addEventListener("pointercancel", (event) => {
+    if (pointer?.id === event.pointerId) pointer = null;
+  });
+
+  button.addEventListener("pointerup", (event) => {
+    const activePointer = pointer;
+    if (!activePointer || activePointer.id !== event.pointerId) return;
+    pointer = null;
+
+    const moved = Math.hypot(event.clientX - activePointer.x, event.clientY - activePointer.y);
+    if (moved > 16 || !button.contains(event.target)) return;
+
+    event.preventDefault();
+    lastPointerActivationAt = performance.now();
+    activate(event);
+  });
+
+  button.addEventListener("click", (event) => {
+    if (button.disabled || performance.now() - lastPointerActivationAt < 750) return;
+    activate(event);
+  });
+}
+
 async function submitPlayerAction(button) {
   if (!button || !myUnitId || playerActionRequestPending) return;
   if (state?.activeId !== myUnitId || state?.activeAction) return;
@@ -837,6 +869,7 @@ function closeStaggerDialog() {
 function closePoiseDialog() {
   poiseTargetId = "";
   poiseDialog.classList.add("hidden");
+  document.body.classList.remove("poise-modal-open");
 }
 
 function renderPoiseControls(mine) {
@@ -857,14 +890,14 @@ function renderPoiseControls(mine) {
     return;
   }
   const tracksPoints = target.team === "pc";
-  const hasPoint = !tracksPoints || (Number(target.poiseRemaining) || 0) > 0;
   const resolving = state?.activeAction?.unitId === target.id;
   poiseDialogTarget.textContent = tracksPoints
     ? `${target.characterName} - ${Math.max(0, Number(target.poiseRemaining) || 0)} remaining`
     : `${target.characterName} - NPC total tracked by GM`;
-  poiseBrace.disabled = !hasPoint || Boolean(target.braceActive);
-  poiseSnapBack.disabled = !hasPoint || target.phase !== "stagger";
-  poiseOvercommit.disabled = !hasPoint || !resolving || Boolean(target.currentAction?.overcommitted) || Boolean(state.activeAction?.overcommitted);
+  poiseBrace.disabled = false;
+  poiseSnapBack.disabled = false;
+  poiseOvercommit.disabled = !resolving;
+  poiseOvercommit.title = resolving ? "" : "Overcommit is available during this character's Resolution.";
 }
 
 function openStaggerDialog(unitId) {
@@ -883,6 +916,7 @@ function openPoiseDialog(unitId) {
   if (!unit) return;
   poiseTargetId = unit.id;
   poiseDialog.classList.remove("hidden");
+  document.body.classList.add("poise-modal-open");
   renderPoiseControls(myUnit());
 }
 
@@ -1443,7 +1477,7 @@ unitList.addEventListener("click", (event) => {
   if (button.dataset.action === "nudge") action({ action: "nudge", id, amount: 5 }, "tap");
 });
 
-playerPoiseButton.addEventListener("click", () => {
+bindReliableTap(playerPoiseButton, () => {
   if (!myUnitId || playerPoiseButton.disabled) return;
   openPoiseDialog(myUnitId);
 });
@@ -1461,14 +1495,20 @@ staggerDuration.addEventListener("keydown", (event) => {
   if (event.key === "Escape") closeStaggerDialog();
 });
 
-cancelPoise.addEventListener("click", closePoiseDialog);
-poiseDialog.addEventListener("click", async (event) => {
-  const button = event.target.closest("button[data-poise-use]");
-  if (!button || button.disabled || !poiseTargetId) return;
-  const targetId = poiseTargetId;
-  const use = button.dataset.poiseUse;
-  closePoiseDialog();
-  await action({ action: "spendPoise", id: targetId, use }, use === "overcommit" ? "resolve" : "tap");
+bindReliableTap(cancelPoise, closePoiseDialog);
+
+for (const button of [poiseBrace, poiseSnapBack, poiseOvercommit]) {
+  bindReliableTap(button, async () => {
+    if (button.disabled || !poiseTargetId) return;
+    const targetId = poiseTargetId;
+    const use = button.dataset.poiseUse;
+    closePoiseDialog();
+    await action({ action: "spendPoise", id: targetId, use }, use === "overcommit" ? "resolve" : "tap");
+  });
+}
+
+poiseDialog.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closePoiseDialog();
 });
 
 playerTurnActions.addEventListener("click", (event) => {
