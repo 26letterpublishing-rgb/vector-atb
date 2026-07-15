@@ -12,8 +12,9 @@ const DEFAULT_BASELINE = 7;
 const DEFAULT_COMMAND_WINDOW = 20;
 const DUMBFOUNDED_SPEED = 20;
 const EXPIRED_COMMAND_MULTIPLIER = 0.2;
-const PREPARATION_BASE_MULTIPLIER = 1.5;
-const EXECUTION_BASE_MULTIPLIER = 2;
+const PREPARATION_BASE_MULTIPLIER = 3.2;
+const EXECUTION_BASE_MULTIPLIER = 4;
+const RECOVERY_BASE_MULTIPLIER = 2.5;
 const DEFAULT_POISE = 3;
 
 const rooms = new Map();
@@ -223,7 +224,7 @@ function currentPhaseRate(unit) {
   if (unit.phase === "preparation") return stepRate(base * PREPARATION_BASE_MULTIPLIER, unit.currentAction.speed.preparation);
   if (unit.phase === "execution") return stepRate(base * EXECUTION_BASE_MULTIPLIER, unit.currentAction.speed.execution);
   if (unit.phase === "recovery") {
-    const rate = stepRate(base, unit.currentAction.speed.recovery);
+    const rate = stepRate(base * RECOVERY_BASE_MULTIPLIER, unit.currentAction.speed.recovery);
     return unit.currentAction.overcommitted ? Math.max(0.1, rate * 0.5) : rate;
   }
   return 0;
