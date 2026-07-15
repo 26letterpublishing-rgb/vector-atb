@@ -203,6 +203,22 @@ const queuedEffectDialog = $("#queuedEffectDialog");
 const gmPanicPause = $("#gmPanicPause");
 const visualModeToggle = $("#visualModeToggle");
 const playerActionSheet = $("#playerActionSheet");
+const playerPoiseButton = $("#playerPoiseButton");
+const playerPoiseCount = $("#playerPoiseCount");
+const staggerDialog = $("#staggerDialog");
+const staggerDialogTarget = $("#staggerDialogTarget");
+const staggerDuration = $("#staggerDuration");
+const cancelStagger = $("#cancelStagger");
+const confirmStagger = $("#confirmStagger");
+const poiseDialog = $("#poiseDialog");
+const poiseDialogTarget = $("#poiseDialogTarget");
+const poiseBrace = $("#poiseBrace");
+const poiseSnapBack = $("#poiseSnapBack");
+const poiseOvercommit = $("#poiseOvercommit");
+const cancelPoise = $("#cancelPoise");
+
+let staggerTargetId = "";
+let poiseTargetId = "";
 
 function safeLocalStorageSet(key, value) {
   try {
@@ -297,6 +313,7 @@ function phaseLabel(unit) {
   if (phase === "preparation") return "PREPARATION";
   if (phase === "execution") return "EXECUTION";
   if (phase === "recovery") return "RECOVERY";
+  if (phase === "stagger") return "STAGGER";
   if (phase === "dumbfounded") return "DUMBFOUNDED!";
   return phase.toUpperCase();
 }
@@ -304,6 +321,7 @@ function phaseLabel(unit) {
 function actionLabel(unit) {
   if (state?.activeId === unit?.id) return "Choose Action";
   if (state?.activeAction?.unitId === unit?.id) return state.activeAction.label;
+  if (unit?.phase === "stagger") return "Action Voided";
   return unit?.currentAction?.label || "Reading Battlefield";
 }
 
@@ -314,6 +332,7 @@ function phaseVerb(unit) {
   if (unit?.phase === "preparation") return "Preparing";
   if (unit?.phase === "execution") return "Executing";
   if (unit?.phase === "recovery") return "Recovering";
+  if (unit?.phase === "stagger") return "Staggered by damage";
   if (unit?.phase === "dumbfounded") return "Losing time";
   return "Standing by";
 }
@@ -451,6 +470,9 @@ function unitSignature(unit, { gm = false, player = false } = {}) {
     unit.phaseRate || "",
     unit.currentRisk || "",
     unit.decisionBoost ? "boost" : "noboost",
+    unit.braceActive ? "braced" : "notbraced",
+    unit.poiseRemaining ?? "paper",
+    unit.currentAction?.overcommitted ? "overcommit" : "normalcommit",
     state?.activeId === unit.id ? "active" : "inactive",
     state?.activeAction?.unitId === unit.id ? "resolving" : "notresolving",
     commandFor(unit) ? "command" : "nocommand",
@@ -471,6 +493,14 @@ function unitCard(unit, { gm = false, player = false } = {}) {
         <span>${command.expired ? "Interruption pending" : `${formatSeconds(command.remaining)} Command Window`}</span>
       </div>`
     : "";
+  const gmCardTools = gm
+    ? `<div class="vector-card-tools">
+        <button class="vector-icon-button damage-button" data-action="stagger" data-id="${escapeHtml(unit.id)}" title="Damage / Stagger" aria-label="Apply damage and Stagger to ${escapeHtml(unit.characterName)}">
+          <span class="target-symbol" aria-hidden="true"></span>
+        </button>
+        ${unit.team === "npc" ? `<button class="vector-icon-button npc-poise-button" data-action="poise" data-id="${escapeHtml(unit.id)}" title="Spend NPC Poise" aria-label="Spend Poise for ${escapeHtml(unit.characterName)}"></button>` : ""}
+      </div>`
+    : "";
   return `
     <article class="unit-card vector-unit-card phase-${escapeHtml(unit.phase)} ${active ? "ready" : ""} ${resolving ? "resolving" : ""} ${own ? "own-unit" : ""}" data-unit-id="${escapeHtml(unit.id)}" data-signature="${escapeHtml(unitSignature(unit, { gm, player }))}" style="${barStyle(unit)}">
       <div class="unit-top vector-unit-top">
@@ -482,6 +512,7 @@ function unitCard(unit, { gm = false, player = false } = {}) {
           <strong>${escapeHtml(actionLabel(unit))}</strong>
           <span class="${Number(unit.currentRisk) < 0 ? "risk-good" : Number(unit.currentRisk) > 0 ? "risk-bad" : ""}">${escapeHtml(currentRiskLabel(unit))}</span>
         </div>
+        ${gmCardTools}
         ${
           player && own
             ? `<label class="player-color-inline" title="Change your ATB color">
@@ -574,7 +605,8 @@ function renderActivePanel() {
     const attack = activeAction.action || {};
     const hit = attack.hitBonus === null || attack.hitBonus === undefined ? "No To-Hit" : `To-Hit ${signedNumber(attack.hitBonus)}`;
     const damage = attack.damage ? `Damage ${attack.damage}${attack.damageType ? ` ${attack.damageType}` : ""}` : "No damage";
-    activeMeta.textContent = `${activeAction.characterName} - ${hit} - ${damage}`;
+    const overcommit = activeAction.overcommitted ? " - OVERCOMMIT ACTIVE" : "";
+    activeMeta.textContent = `${activeAction.characterName} - ${hit} - ${damage}${overcommit}`;
     return;
   }
 
@@ -655,11 +687,68 @@ function renderPlayerCommand(mine) {
   playerTurnActions.innerHTML = actionButtonsMarkup(mine, { compact: true });
 }
 
+function closeStaggerDialog() {
+  staggerTargetId = "";
+  staggerDialog.classList.add("hidden");
+}
+
+function closePoiseDialog() {
+  poiseTargetId = "";
+  poiseDialog.classList.add("hidden");
+}
+
+function renderPoiseControls(mine) {
+  const showPlayerPoise = mode === "player" && Boolean(mine);
+  playerPoiseButton.classList.toggle("hidden", !showPlayerPoise);
+  if (mine) {
+    const remaining = Math.max(0, Number(mine.poiseRemaining) || 0);
+    playerPoiseCount.textContent = String(remaining);
+    playerPoiseButton.disabled = remaining <= 0;
+    playerPoiseButton.classList.toggle("empty", remaining <= 0);
+    playerPoiseButton.classList.toggle("braced", Boolean(mine.braceActive));
+  }
+
+  if (poiseDialog.classList.contains("hidden")) return;
+  const target = state?.units.find((unit) => unit.id === poiseTargetId);
+  if (!target) {
+    closePoiseDialog();
+    return;
+  }
+  const tracksPoints = target.team === "pc";
+  const hasPoint = !tracksPoints || (Number(target.poiseRemaining) || 0) > 0;
+  const resolving = state?.activeAction?.unitId === target.id;
+  poiseDialogTarget.textContent = tracksPoints
+    ? `${target.characterName} - ${Math.max(0, Number(target.poiseRemaining) || 0)} remaining`
+    : `${target.characterName} - NPC total tracked by GM`;
+  poiseBrace.disabled = !hasPoint || Boolean(target.braceActive);
+  poiseSnapBack.disabled = !hasPoint || target.phase !== "stagger";
+  poiseOvercommit.disabled = !hasPoint || !resolving || Boolean(target.currentAction?.overcommitted) || Boolean(state.activeAction?.overcommitted);
+}
+
+function openStaggerDialog(unitId) {
+  const unit = state?.units.find((entry) => entry.id === unitId);
+  if (!unit) return;
+  staggerTargetId = unit.id;
+  staggerDialogTarget.textContent = unit.characterName;
+  staggerDuration.value = "5";
+  staggerDialog.classList.remove("hidden");
+  staggerDuration.focus();
+  staggerDuration.select();
+}
+
+function openPoiseDialog(unitId) {
+  const unit = state?.units.find((entry) => entry.id === unitId);
+  if (!unit) return;
+  poiseTargetId = unit.id;
+  poiseDialog.classList.remove("hidden");
+  renderPoiseControls(myUnit());
+}
+
 function renderResolutionDialog() {
   if (mode === "gm" && state?.activeAction) {
-    turnDialogKicker.textContent = "Resolve Action";
+    turnDialogKicker.textContent = state.activeAction.overcommitted ? "Overcommit - Increase Damage" : "Resolve Action";
     activeName.textContent = `RESOLVE: ${state.activeAction.label}`;
-    activeOwner.textContent = `${state.activeAction.characterName} - ${state.activeAction.playerName}`;
+    activeOwner.textContent = `${state.activeAction.characterName} - ${state.activeAction.playerName}${state.activeAction.overcommitted ? " - Recovery speed halved" : ""}`;
     completeTurn.textContent = "Action Resolved";
     gmDelay.classList.add("hidden");
     turnDialog.classList.remove("hidden");
@@ -726,6 +815,9 @@ function render() {
     gmPanicPause.classList.add("hidden");
     gmMuteSound.classList.add("hidden");
     visualModeToggle.classList.add("hidden");
+    playerPoiseButton.classList.add("hidden");
+    closeStaggerDialog();
+    closePoiseDialog();
     return;
   }
 
@@ -750,6 +842,7 @@ function render() {
   const mine = myUnit();
   myUnitCard.innerHTML = "";
   renderPlayerCommand(mine);
+  renderPoiseControls(mine);
 
   logList.innerHTML = state.log
     .slice()
@@ -1193,8 +1286,38 @@ unitList.addEventListener("click", (event) => {
   const button = event.target.closest("button");
   if (!button || mode !== "gm") return;
   const id = button.dataset.id;
+  if (button.dataset.action === "stagger") openStaggerDialog(id);
+  if (button.dataset.action === "poise") openPoiseDialog(id);
   if (button.dataset.action === "remove") action({ action: "removeUnit", id }, "danger");
   if (button.dataset.action === "nudge") action({ action: "nudge", id, amount: 5 }, "tap");
+});
+
+playerPoiseButton.addEventListener("click", () => {
+  if (!myUnitId || playerPoiseButton.disabled) return;
+  openPoiseDialog(myUnitId);
+});
+
+cancelStagger.addEventListener("click", closeStaggerDialog);
+confirmStagger.addEventListener("click", async () => {
+  if (!staggerTargetId) return;
+  const duration = clamp(Number(staggerDuration.value) || 0, 0.5, 120);
+  const targetId = staggerTargetId;
+  closeStaggerDialog();
+  await action({ action: "applyStagger", id: targetId, duration }, "danger");
+});
+staggerDuration.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") confirmStagger.click();
+  if (event.key === "Escape") closeStaggerDialog();
+});
+
+cancelPoise.addEventListener("click", closePoiseDialog);
+poiseDialog.addEventListener("click", async (event) => {
+  const button = event.target.closest("button[data-poise-use]");
+  if (!button || button.disabled || !poiseTargetId) return;
+  const targetId = poiseTargetId;
+  const use = button.dataset.poiseUse;
+  closePoiseDialog();
+  await action({ action: "spendPoise", id: targetId, use }, use === "overcommit" ? "resolve" : "tap");
 });
 
 playerTurnActions.addEventListener("click", (event) => {

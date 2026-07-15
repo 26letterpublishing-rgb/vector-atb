@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vector ATB Sync</title>
-    <link rel="stylesheet" href="styles.css?v=20260710-vector-phase-1" />
+    <link rel="stylesheet" href="styles.css?v=20260714-vector-stagger-1" />
   </head>
   <body>
     <main class="shell">
@@ -297,6 +297,54 @@
 
     <button id="gmPanicPause" class="gm-panic-pause hidden">Pause Everything</button>
     <button id="visualModeToggle" class="visual-mode-toggle hidden" type="button">Tactical Ring</button>
+    <button id="playerPoiseButton" class="player-poise-button hidden" type="button" aria-label="Spend Poise">
+      <span>Poise</span>
+      <strong id="playerPoiseCount">3</strong>
+    </button>
+
+    <section id="staggerDialog" class="vector-modal hidden" role="dialog" aria-modal="true" aria-labelledby="staggerDialogTitle">
+      <div class="vector-modal-panel">
+        <p class="eyebrow">Damage Interrupt</p>
+        <h2 id="staggerDialogTitle">Apply Stagger</h2>
+        <p id="staggerDialogTarget" class="vector-modal-target">Character</p>
+        <label class="vector-modal-field">
+          Stagger Time
+          <span class="number-with-unit">
+            <input id="staggerDuration" type="number" min="0.5" max="120" step="0.5" value="5" inputmode="decimal" />
+            <small>seconds</small>
+          </span>
+        </label>
+        <div class="vector-modal-actions">
+          <button id="cancelStagger" type="button" class="secondary">Cancel</button>
+          <button id="confirmStagger" type="button" class="complete">Apply Stagger</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="poiseDialog" class="vector-modal hidden" role="dialog" aria-modal="true" aria-labelledby="poiseDialogTitle">
+      <div class="vector-modal-panel poise-panel">
+        <p class="eyebrow">Poise</p>
+        <h2 id="poiseDialogTitle">Spend a Poise Point</h2>
+        <p id="poiseDialogTarget" class="vector-modal-target">Character</p>
+        <div class="poise-choice-list">
+          <button id="poiseBrace" type="button" data-poise-use="brace">
+            <strong>Brace</strong>
+            <small>Ignore new Stagger until your next Decision fills.</small>
+          </button>
+          <button id="poiseSnapBack" type="button" data-poise-use="snapBack">
+            <strong>Snap Back</strong>
+            <small>End Stagger and begin Decision at twice normal speed.</small>
+          </button>
+          <button id="poiseOvercommit" type="button" data-poise-use="overcommit">
+            <strong>Overcommit</strong>
+            <small>Increase damage, then halve Recovery speed.</small>
+          </button>
+        </div>
+        <div class="vector-modal-actions">
+          <button id="cancelPoise" type="button" class="secondary">Cancel</button>
+        </div>
+      </div>
+    </section>
 
     <div id="playerActionSheet" class="player-action-sheet hidden">
       <div class="action-sheet-head">
@@ -306,6 +354,6 @@
       <div id="playerActionChoices" class="action-choice-grid"></div>
     </div>
 
-    <script src="app.js?v=20260710-vector-phase-1"></script>
+    <script src="app.js?v=20260714-vector-stagger-1"></script>
   </body>
 </html>

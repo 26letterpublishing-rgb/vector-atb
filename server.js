@@ -12,6 +12,9 @@ const DEFAULT_BASELINE = 7;
 const DEFAULT_COMMAND_WINDOW = 20;
 const DUMBFOUNDED_SPEED = 20;
 const EXPIRED_COMMAND_MULTIPLIER = 0.2;
+const PREPARATION_BASE_MULTIPLIER = 1.5;
+const EXECUTION_BASE_MULTIPLIER = 2;
+const DEFAULT_POISE = 3;
 
 const rooms = new Map();
 const clients = new Map();
@@ -215,10 +218,14 @@ function currentPhaseRate(unit) {
   if (!unit) return 0;
   if (unit.phase === "decision") return unit.decisionBoost ? base * 2 : base;
   if (unit.phase === "dumbfounded") return DUMBFOUNDED_SPEED;
+  if (unit.phase === "stagger") return clamp(Number(unit.staggerRate) || 1, 1, 200);
   if (!unit.currentAction) return base;
-  if (unit.phase === "preparation") return stepRate(base, unit.currentAction.speed.preparation);
-  if (unit.phase === "execution") return stepRate(base, unit.currentAction.speed.execution);
-  if (unit.phase === "recovery") return stepRate(base, unit.currentAction.speed.recovery);
+  if (unit.phase === "preparation") return stepRate(base * PREPARATION_BASE_MULTIPLIER, unit.currentAction.speed.preparation);
+  if (unit.phase === "execution") return stepRate(base * EXECUTION_BASE_MULTIPLIER, unit.currentAction.speed.execution);
+  if (unit.phase === "recovery") {
+    const rate = stepRate(base, unit.currentAction.speed.recovery);
+    return unit.currentAction.overcommitted ? Math.max(0.1, rate * 0.5) : rate;
+  }
   return 0;
 }
 
@@ -232,7 +239,7 @@ function currentRisk(unit) {
 
 function phaseDirection(phase) {
   if (phase === "decision" || phase === "execution") return "up";
-  if (phase === "preparation" || phase === "recovery" || phase === "dumbfounded") return "down";
+  if (phase === "preparation" || phase === "recovery" || phase === "dumbfounded" || phase === "stagger") return "down";
   return "hold";
 }
 
@@ -380,6 +387,8 @@ const undoableActions = new Set([
   "setColor",
   "chooseAction",
   "completeResolution",
+  "applyStagger",
+  "spendPoise",
   "step",
   "reset",
   "clearEncounter",
@@ -426,7 +435,12 @@ function pauseForDecision(room, unit) {
   room.activeAction = null;
   unit.phase = "decision";
   unit.phaseProgress = room.threshold;
+  unit.staggerRate = null;
   unit.commandExpired = false;
+  if (unit.braceActive) {
+    unit.braceActive = false;
+    pushLog(room, `${unit.characterName}'s Brace ended at DECISION.`);
+  }
   room.commandExpired = false;
   if (unit.team === "pc" && unit.commandWindow) {
     room.commandTotal = unit.commandWindow;
@@ -459,7 +473,91 @@ function startRecovery(room, unit) {
   if (!unit) return;
   unit.phase = "recovery";
   unit.phaseProgress = room.threshold;
-  pushLog(room, `${unit.characterName} entered RECOVERY: ${unit.currentAction?.label || "Action"}.`);
+  const overcommit = unit.currentAction?.overcommitted ? " (Overcommit: half speed)" : "";
+  pushLog(room, `${unit.characterName} entered RECOVERY: ${unit.currentAction?.label || "Action"}${overcommit}.`);
+}
+
+function cancelPausedActionFor(room, unit) {
+  let releasedPause = false;
+  if (room.activeId === unit.id) {
+    room.activeId = null;
+    room.pausedForTurn = false;
+    clearCommand(room);
+    releasedPause = true;
+  }
+  if (room.activeAction?.unitId === unit.id) {
+    room.activeAction = null;
+    room.pausedForResolution = false;
+    releasedPause = true;
+  }
+  return releasedPause;
+}
+
+function applyStagger(room, unit, duration) {
+  if (!unit) return false;
+  const seconds = clamp(Number(duration) || 1, 0.5, 120);
+  if (unit.braceActive) {
+    pushLog(room, `${unit.characterName}'s Brace ignored a ${seconds.toFixed(1)} sec STAGGER.`);
+    return true;
+  }
+
+  const newRate = room.threshold / seconds;
+  if (unit.phase === "stagger") {
+    const currentRate = clamp(Number(unit.staggerRate) || 1, 1, 200);
+    const remaining = (Number(unit.phaseProgress) || 0) / currentRate;
+    if (seconds > remaining) {
+      unit.phaseProgress = room.threshold;
+      unit.staggerRate = newRate;
+      pushLog(room, `${unit.characterName}'s STAGGER was replaced by a longer ${seconds.toFixed(1)} sec STAGGER.`);
+    } else {
+      unit.staggerRate = Math.max(1, currentRate - 1);
+      pushLog(room, `${unit.characterName}'s STAGGER speed was reduced by 1.`);
+    }
+    return true;
+  }
+
+  const cancelledLabel = unit.currentAction?.label || (room.activeId === unit.id ? "Decision" : "current action");
+  const releasedPause = cancelPausedActionFor(room, unit);
+  unit.phase = "stagger";
+  unit.phaseProgress = room.threshold;
+  unit.staggerRate = newRate;
+  unit.currentAction = null;
+  unit.decisionBoost = false;
+  unit.commandExpired = false;
+  pushLog(room, `${unit.characterName} took damage. ${cancelledLabel} was voided; STAGGER ${seconds.toFixed(1)} sec.`);
+  if (releasedPause) moveToNextOrClock(room);
+  return true;
+}
+
+function spendPoise(room, unit, use) {
+  if (!unit) return false;
+  const tracksPoise = unit.team === "pc";
+  if (tracksPoise && (Number(unit.poiseRemaining) || 0) <= 0) return false;
+
+  if (use === "brace") {
+    if (unit.braceActive) return false;
+    unit.braceActive = true;
+  } else if (use === "snapBack") {
+    if (unit.phase !== "stagger") return false;
+    unit.phase = "decision";
+    unit.phaseProgress = 0;
+    unit.staggerRate = null;
+    unit.currentAction = null;
+    unit.decisionBoost = true;
+  } else if (use === "overcommit") {
+    if (room.activeAction?.unitId !== unit.id || !unit.currentAction || unit.currentAction.overcommitted) return false;
+    unit.currentAction.overcommitted = true;
+    room.activeAction.overcommitted = true;
+    room.activeAction.action.overcommitted = true;
+  } else {
+    return false;
+  }
+
+  if (tracksPoise) unit.poiseRemaining -= 1;
+  const labels = { brace: "BRACE", snapBack: "SNAP BACK", overcommit: "OVERCOMMIT" };
+  const remaining = tracksPoise ? ` (${unit.poiseRemaining} Poise remaining)` : "";
+  pushLog(room, `${unit.characterName} spent Poise: ${labels[use]}${remaining}.`);
+  return true;
 }
 
 function pauseForResolution(room, unit) {
@@ -550,6 +648,18 @@ function addProgress(room, seconds, { exact = false } = {}) {
         unit.phase = "decision";
         unit.phaseProgress = 0;
         unit.currentAction = null;
+      }
+      continue;
+    }
+
+    if (unit.phase === "stagger") {
+      unit.phaseProgress = Math.max(0, (Number(unit.phaseProgress) || room.threshold) - rate * seconds);
+      if (unit.phaseProgress <= 0) {
+        unit.phase = "decision";
+        unit.phaseProgress = 0;
+        unit.staggerRate = null;
+        unit.currentAction = null;
+        pushLog(room, `${unit.characterName} recovered from STAGGER and returned to DECISION.`);
       }
       continue;
     }
@@ -719,6 +829,9 @@ async function handleAction(req, res) {
       currentAction: null,
       decisionBoost: false,
       commandExpired: false,
+      staggerRate: null,
+      braceActive: false,
+      poiseRemaining: team === "pc" ? DEFAULT_POISE : null,
       controlledBy: body.controlledBy || "player",
       team,
       actorType: "character",
@@ -844,6 +957,16 @@ async function handleAction(req, res) {
     }
   }
 
+  if (action === "applyStagger") {
+    const unit = room.units.find((entry) => entry.id === body.id);
+    applyStagger(room, unit, body.duration);
+  }
+
+  if (action === "spendPoise") {
+    const unit = room.units.find((entry) => entry.id === body.id);
+    spendPoise(room, unit, body.use);
+  }
+
   if (action === "step") {
     if (room.pausedForTurn || room.pausedForResolution) {
       pushLog(room, "Resolve the active decision/resolution before stepping the clock.");
@@ -865,6 +988,9 @@ async function handleAction(req, res) {
       unit.currentAction = null;
       unit.decisionBoost = false;
       unit.commandExpired = false;
+      unit.staggerRate = null;
+      unit.braceActive = false;
+      unit.poiseRemaining = unit.team === "pc" ? DEFAULT_POISE : null;
     }
     room.running = false;
     room.pausedForTurn = false;
