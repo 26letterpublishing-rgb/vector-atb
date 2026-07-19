@@ -236,12 +236,14 @@ label {
 
 .mode-buttons {
   display: grid;
-  grid-template-columns: repeat(2, minmax(180px, 260px));
+  width: min(760px, 100%);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
 }
 
 .mode-buttons button {
   min-height: 68px;
+  max-width: none;
 }
 
 .room-join-panel {
@@ -3034,6 +3036,10 @@ h2 {
     padding: 0 8px;
     font-size: 0.78rem;
     line-height: 1.08;
+  }
+
+  .welcome-panel .character-creation-button {
+    grid-column: 1 / -1;
   }
 
   .gm-control-grid {

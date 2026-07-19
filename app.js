@@ -130,6 +130,7 @@ function myUnit() { return state?.units.find((unit) => unit.id === myUnitId) || 
 function activeUnit() { return state?.units.find((unit) => unit.id === state?.activeId) || null; }
 function commandFor(unit) { return state?.command?.unitId === unit?.id ? state.command : null; }
 function displayedDecisionRate(unit) { return (Number(unit?.stats?.intellect) + Number(unit?.stats?.initiative)) * 5; }
+function displayedDecisionMultiplier(unit) { return Math.max(1, Number(unit?.decisionMultiplier) || (unit?.moveDecisionBoost ? 3 : unit?.decisionBoost ? 2 : 1)); }
 function playerVisibleActions() { return actions().filter((entry) => entry.id !== "improvised"); }
 
 function collectEntryData(fields) {
@@ -288,6 +289,7 @@ function connectEvents() {
 }
 
 function phaseLabel(unit) {
+  if (unit?.phase === "decision" && displayedDecisionMultiplier(unit) > 1) return `DECISION x${displayedDecisionMultiplier(unit)}`;
   if (unit?.phase === "execution" && unit.currentAction?.kind === "move") return `MOVEMENT: ${formatRate(unit.movementUnits)} UNITS`;
   return ({ decision: "DECISION", preparation: "PREPARATION", execution: "EXECUTION", recovery: "RECOVERY", stagger: "STAGGER", dumbfounded: "DUMBFOUNDED!" })[unit?.phase] || String(unit?.phase || "").toUpperCase();
 }
@@ -321,7 +323,7 @@ function estimatePhase(unit) {
 }
 
 function unitStructureSignature(unit, gm, player) {
-  return [unit.id, gm, player, unit.characterName, unit.playerName, unit.color, unit.team, unit.phase, unit.currentAction?.label, unit.currentAction?.kind, unit.currentRisk, formatRate(unit.phaseRate), unit.poiseRemaining, unit.poiseMax, unit.staggerImmunity, unit.poiseLocked, unit.actionQueue?.length, state?.activeId === unit.id, state?.activeAction?.unitId === unit.id, state?.hardPaused].join("|");
+  return [unit.id, gm, player, unit.characterName, unit.playerName, unit.color, unit.team, unit.phase, unit.currentAction?.label, unit.currentAction?.kind, unit.currentRisk, formatRate(unit.phaseRate), unit.decisionMultiplier, unit.poiseRemaining, unit.poiseMax, unit.staggerImmunity, unit.poiseLocked, unit.actionQueue?.length, state?.activeId === unit.id, state?.activeAction?.unitId === unit.id, state?.hardPaused].join("|");
 }
 
 function actionButtonsMarkup(unit) {
@@ -445,7 +447,8 @@ function renderPlayerCommand(mine) {
   }
   const command = commandFor(mine);
   const percent = command ? clamp((command.remaining / command.total) * 100, 0, 100) : 100;
-  elements.playerFocusEyebrow.textContent = mine.decisionBoost ? "Decision x2" : "Decision Window";
+  const multiplier = displayedDecisionMultiplier(mine);
+  elements.playerFocusEyebrow.textContent = multiplier > 1 ? `Decision x${multiplier}` : "Decision Window";
   elements.playerFocusCommandTime.textContent = command ? formatClock(command.remaining) : "READY";
   elements.playerFocusPrompt.textContent = command?.expired ? "Choose now" : "Choose one action";
   elements.playerCommandTrackFill.style.width = `${percent}%`;
@@ -461,7 +464,7 @@ function availablePoiseChoices(unit) {
   const level = Number(unit.stats.composure) || 0;
   const points = Number(unit.poiseRemaining) || 0;
   const choices = [];
-  if (level >= 1 && points >= 1) choices.push({ use: "snapBack", name: "Snap Back", cost: 1, text: "Void the current state and begin Decision at twice normal speed." });
+  if (level >= 1 && points >= 1) choices.push({ use: "snapBack", name: "Snap Back", cost: 1, text: unit.moveDecisionBoost ? "Void the current state and begin Decision with Movement x3." : "Void the current state and begin Decision at twice normal speed." });
   if (level >= 3 && points >= 1 && !["decision", "stagger"].includes(unit.phase) && !unit.staggerImmunity) choices.push({ use: "staggerImmunity", name: "Stagger Immunity", cost: 1, text: "Ignore Stagger until the next Decision fills." });
   const attackWindow = unit.phase === "decision" || (unit.phase === "preparation" && unit.currentAction?.kind === "attack");
   if (level >= 4 && points >= 2 && attackWindow) choices.push({ use: "heavyStagger", name: unit.pendingAttackPoise?.heavyStagger ? "Cancel Crushing Commitment" : "Crushing Commitment", cost: unit.pendingAttackPoise?.heavyStagger ? 0 : 2, text: "Double inflicted Stagger and this attack's Recovery time." });

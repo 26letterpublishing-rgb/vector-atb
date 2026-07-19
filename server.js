@@ -121,6 +121,12 @@ function decisionRate(unit) {
   return positiveRate((number(unit?.stats?.intellect) + number(unit?.stats?.initiative)) * 5);
 }
 
+function decisionMultiplier(unit) {
+  if (unit?.moveDecisionBoost) return 3;
+  if (unit?.decisionBoost) return 2;
+  return 1;
+}
+
 function improvisedPhaseRate(custom, phase, fallbackRate) {
   const enteredTime = Number(custom[`${phase}Time`]);
   if (Number.isFinite(enteredTime) && enteredTime > 0) return THRESHOLD / clamp(enteredTime, 0.1, 10000);
@@ -230,7 +236,7 @@ function currentPhaseRate(unit) {
   if (!unit) return 0;
   if (unit.phase === "decision") {
     const rate = decisionRate(unit);
-    return unit.decisionBoost ? rate * 2 : rate;
+    return rate * decisionMultiplier(unit);
   }
   if (unit.phase === "dumbfounded") return DUMBFOUNDED_RATE;
   if (unit.phase === "stagger") return positiveRate(unit.staggerRate);
@@ -346,6 +352,7 @@ function publicState(room) {
     units: room.units.map((unit) => ({
       ...clone(unit),
       phaseRate: currentPhaseRate(unit),
+      decisionMultiplier: decisionMultiplier(unit),
       phaseDirection: phaseDirection(unit.phase),
       currentRisk: currentRisk(unit),
       movementUnits: movementUnits(unit),
@@ -479,6 +486,7 @@ function chooseActionInternal(room, unit, request, { queued = false } = {}) {
   unit.phaseProgress = THRESHOLD;
   unit.commandExpired = false;
   unit.decisionBoost = false;
+  unit.moveDecisionBoost = false;
   unit.staggerImmunity = false;
   room.pausedForTurn = false;
   room.activeId = null;
@@ -528,6 +536,7 @@ function interruptExpiredDecision(room) {
   unit.currentAction = null;
   unit.commandExpired = false;
   unit.decisionBoost = false;
+  unit.moveDecisionBoost = false;
   unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false };
   room.lastInterruptedId = unit.id;
   room.lastInterruptedAt = Date.now();
@@ -698,7 +707,7 @@ function spendPoise(room, unit, use) {
     unit.decisionBoost = true;
     unit.poiseLocked = false;
     unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false };
-    pushLog(room, `${unit.characterName} spent 1 Poise: ${cancelled} voided; DECISION x2.`);
+    pushLog(room, `${unit.characterName} spent 1 Poise: ${cancelled} voided; DECISION x${decisionMultiplier(unit)}.`);
   } else if (use === "staggerImmunity") {
     if (level < 3 || unit.phase === "decision" || unit.phase === "stagger" || unit.poiseRemaining < 1 || unit.staggerImmunity) return false;
     unit.poiseRemaining -= 1;
@@ -896,6 +905,7 @@ function createUnit(body) {
     actionQueue: [],
     lastExecutedActionId: null,
     decisionBoost: false,
+    moveDecisionBoost: false,
     commandExpired: false,
     staggerRate: null,
     staggerImmunity: false,
@@ -986,7 +996,13 @@ async function handleAction(req, res) {
     if (room.activeAction) {
       const unit = room.units.find((entry) => entry.id === room.activeAction.unitId);
       const label = room.activeAction.label;
-      if (unit) startRecovery(room, unit);
+      if (unit) {
+        if (room.activeAction.action?.kind === "move") {
+          unit.moveDecisionBoost = true;
+          pushLog(room, `${unit.characterName} gains DECISION x3 from movement.`);
+        }
+        startRecovery(room, unit);
+      }
       room.pausedForResolution = false; room.activeAction = null; room.activeId = null; pushLog(room, `Resolved: ${label}.`); moveToNextOrClock(room);
     }
   } else if (action === "applyStagger") {
@@ -1001,7 +1017,7 @@ async function handleAction(req, res) {
     }
   } else if (action === "reset") {
     for (const unit of room.units) {
-      unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.lastExecutedActionId = null; unit.decisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.poiseMax = unit.stats.composure; unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
+      unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.lastExecutedActionId = null; unit.decisionBoost = false; unit.moveDecisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.poiseMax = unit.stats.composure; unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
     }
     room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.lastInterruptedId = null; room.lastInterruptedAt = 0; room.notice = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter reset.");
   } else if (action === "clearEncounter") {
