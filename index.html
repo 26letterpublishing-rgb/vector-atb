@@ -4,7 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vector ATB Sync</title>
-    <link rel="stylesheet" href="styles.css?v=20260718-decision-x5" />
+    <link rel="stylesheet" href="styles.css?v=20260719-character-sheet" />
+    <link rel="stylesheet" href="character-sheet.css?v=20260719-character-sheet" />
   </head>
   <body>
     <main class="shell">
@@ -16,11 +17,130 @@
           <div class="mode-buttons">
             <button id="createRoom" class="primary">Create Room as GM</button>
             <button id="showJoinRoom">Join Room as Player</button>
-            <button id="showCharacterCreation" class="character-creation-button" type="button">Character Creation</button>
+            <button id="showCharacterCreation" class="character-creation-button" type="button">Create New Character</button>
           </div>
         </div>
       </section>
 
+      <section id="characterCreator" class="character-creator hidden" aria-labelledby="characterCreatorTitle">
+        <header class="character-creator-header">
+          <button id="characterBack" class="character-header-command secondary" type="button">Back</button>
+          <div class="character-creator-title">
+            <p class="eyebrow">Vector Record</p>
+            <h1 id="characterCreatorTitle">Character Sheet</h1>
+          </div>
+          <div class="character-file-actions">
+            <button id="characterImport" class="secondary" type="button">Import File</button>
+            <button id="characterExport" class="secondary" type="button">Export / Share</button>
+            <button id="characterSave" class="primary" type="button">Save Character</button>
+            <input id="characterImportFile" class="hidden" type="file" accept="application/json,.json,.vector" />
+          </div>
+        </header>
+
+        <div class="character-vault-bar">
+          <label>
+            Saved Characters
+            <select id="characterSavedSelect"></select>
+          </label>
+          <button id="characterNew" type="button">New</button>
+          <span id="characterSaveState" class="character-save-state" role="status">Local draft</span>
+        </div>
+
+        <section class="character-identity-strip">
+          <label class="character-name-field">
+            Character Name
+            <input id="characterSheetName" maxlength="40" value="New Vector" />
+          </label>
+          <label class="character-color-field">
+            Color
+            <input id="characterSheetColor" type="color" value="#39e58f" />
+          </label>
+          <div class="character-resource-readout experience">
+            <span>Available EXP</span>
+            <strong id="characterAvailableExp">70</strong>
+          </div>
+          <div class="character-resource-readout spent">
+            <span>Spent EXP</span>
+            <strong id="characterSpentExp">0</strong>
+          </div>
+          <div class="character-resource-readout karma">
+            <span>Karma</span>
+            <strong id="characterKarma">0</strong>
+          </div>
+        </section>
+
+        <nav id="characterTabs" class="character-tabs" aria-label="Character sheet sections">
+          <button class="active" type="button" data-character-tab="attributes" aria-selected="true">Attributes</button>
+          <button type="button" data-character-tab="skills" aria-selected="false">Skills</button>
+          <button type="button" data-character-tab="vitals" aria-selected="false">Vitals</button>
+          <button type="button" data-character-tab="network" aria-selected="false">Network</button>
+        </nav>
+
+        <div class="character-sheet-body">
+          <section class="character-tab-panel" data-character-panel="attributes">
+            <div class="character-section-head">
+              <div>
+                <p class="eyebrow">Dice Pools</p>
+                <h2>Attributes</h2>
+              </div>
+              <div class="character-build-actions">
+                <button id="characterUndo" class="secondary" type="button">Undo Last Purchase</button>
+                <button id="characterReset" class="danger" type="button">Reset Build</button>
+              </div>
+            </div>
+            <div id="characterAttributeGrid" class="character-attribute-grid"></div>
+          </section>
+
+          <section class="character-tab-panel hidden" data-character-panel="skills">
+            <div class="character-section-head character-skill-head">
+              <div>
+                <p class="eyebrow">Flat Bonuses</p>
+                <h2>Skills</h2>
+              </div>
+              <label class="character-skill-search">
+                Find Skill
+                <input id="characterSkillSearch" type="search" placeholder="Search" autocomplete="off" />
+              </label>
+            </div>
+            <div class="character-skill-columns" aria-hidden="true"><span>Skill</span><span>Rating</span><span>Next</span><span></span></div>
+            <div id="characterSkillList" class="character-skill-list"></div>
+          </section>
+
+          <section class="character-tab-panel hidden" data-character-panel="vitals">
+            <div class="character-section-head">
+              <div>
+                <p class="eyebrow">Derived Record</p>
+                <h2>Vitals</h2>
+              </div>
+            </div>
+            <div class="character-derived-grid">
+              <div><span>Move Speed</span><strong id="characterMoveSpeed">2</strong></div>
+              <div><span>Stability Threshold</span><strong id="characterStabilityThreshold">2</strong></div>
+              <div><span>Core Threshold</span><strong id="characterCoreThreshold">2</strong></div>
+              <div><span>Poise</span><strong id="characterPoise">3 / 3</strong></div>
+            </div>
+            <div id="characterDamageTracks" class="character-damage-tracks"></div>
+          </section>
+
+          <section class="character-tab-panel hidden" data-character-panel="network">
+            <div class="character-section-head">
+              <div>
+                <p class="eyebrow">Algorithmic Attention</p>
+                <h2>Network Profile</h2>
+              </div>
+              <label class="vector-score-field">
+                Vector Score
+                <input id="characterVectorScore" type="number" min="0" max="999" step="1" value="0" inputmode="numeric" />
+              </label>
+            </div>
+            <div id="characterNetworkRatings" class="character-network-ratings"></div>
+            <div class="character-network-notes">
+              <label>Affiliations<textarea id="characterAffiliations" rows="6" placeholder="One affiliation per line"></textarea></label>
+              <label>Achievements<textarea id="characterAchievements" rows="6" placeholder="One achievement per line"></textarea></label>
+            </div>
+          </section>
+        </div>
+      </section>
       <section id="topbar" class="topbar">
         <div class="topbar-title">
           <img class="topbar-banner" src="SAATBBanner.jpg" alt="Vector ATB Sync" />
@@ -59,7 +179,13 @@
           <h2>Join Encounter</h2>
           <p>Enter the character and equipped weapon used for this encounter.</p>
         </div>
-        <label>
+        <div class="saved-character-join">
+          <label>
+            Saved Character
+            <select id="joinCharacterSelect"><option value="">Manual Entry</option></select>
+          </label>
+          <button id="editJoinCharacter" class="secondary" type="button">Open Sheet</button>
+        </div>        <label>
           Player Name
           <input id="playerName" autocomplete="name" placeholder="Enter YOUR name here" />
         </label>
@@ -172,6 +298,7 @@
         <div class="controls gm-timing-controls">
           <button id="undoLastTiming" class="control-square undo">Undo<br />Timing</button>
           <button id="stepTick" class="control-square">Step<br />1 Sec</button>
+          <button id="openAwardDialog" class="control-square award">Award<br />EXP / Karma</button>
         </div>
       </section>
 
@@ -420,6 +547,31 @@
       </div>
     </section>
 
+    <section id="awardDialog" class="vector-modal hidden" role="dialog" aria-modal="true" aria-labelledby="awardDialogTitle">
+      <div class="vector-modal-panel award-panel">
+        <p class="eyebrow">Character Advancement</p>
+        <h2 id="awardDialogTitle">Award Players</h2>
+        <label class="vector-modal-field">
+          Recipient
+          <select id="awardTarget"></select>
+        </label>
+        <label class="vector-modal-field">
+          Award
+          <select id="awardResource">
+            <option value="experience">EXP</option>
+            <option value="karma">Karma</option>
+          </select>
+        </label>
+        <label class="vector-modal-field">
+          Amount
+          <input id="awardAmount" type="number" min="1" max="999999" step="1" value="1" inputmode="numeric" />
+        </label>
+        <div class="vector-modal-actions">
+          <button id="cancelAward" class="secondary" type="button">Cancel</button>
+          <button id="confirmAward" class="complete" type="button">Give Award</button>
+        </div>
+      </div>
+    </section>
     <section id="actionConfigDialog" class="vector-modal hidden" role="dialog" aria-modal="true" aria-labelledby="actionConfigTitle">
       <div class="vector-modal-panel action-config-panel">
         <p id="actionConfigEyebrow" class="eyebrow">Configure Action</p>
@@ -466,6 +618,7 @@
       <div id="playerActionChoices" class="action-choice-grid"></div>
     </div>
 
-    <script src="app.js?v=20260718-decision-x5"></script>
+    <script src="character-sheet.js?v=20260719-character-sheet"></script>
+    <script src="app.js?v=20260719-character-sheet"></script>
   </body>
 </html>

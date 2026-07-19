@@ -80,14 +80,27 @@ function normalizeRisk(value, fallback = 0) {
 
 function normalizeStats(source = {}) {
   return {
-    intellect: whole(source.intellect, 7, 2, 20),
+    strength: whole(source.strength, 2, 2, 20),
     dexterity: whole(source.dexterity, 7, 2, 20),
+    health: whole(source.health, 2, 2, 20),
+    intellect: whole(source.intellect, 7, 2, 20),
     perception: whole(source.perception, 7, 2, 20),
+    charisma: whole(source.charisma, 2, 2, 20),
     initiative: whole(source.initiative, 7, 0, 99),
     composure: whole(source.composure, 3, 0, 99),
     firearms: whole(source.firearms, 7, 0, 99),
     melee: whole(source.melee, 7, 0, 99),
     dodge: whole(source.dodge, 7, 0, 99),
+  };
+}
+
+function normalizeExperience(source = {}) {
+  const totalSpent = whole(source.totalSpent, 0, 0, 999999999);
+  const totalEarned = whole(source.totalEarned, 0, 0, 999999999);
+  return {
+    available: whole(source.available, Math.max(0, totalEarned - totalSpent), 0, 999999999),
+    totalEarned,
+    totalSpent,
   };
 }
 
@@ -111,6 +124,10 @@ function moveSpeed(dexterity) {
   return Math.min(10, 7 + Math.floor((dex - 10) / 3));
 }
 
+function effectiveAtbAttribute(unit, attribute) {
+  return Math.max(1, number(unit?.stats?.[attribute], 1) - whole(unit?.coreLost, 0, 0, 10));
+}
+
 function recoveryRate(dexterity, skill, weaponRecovery) {
   const score = number(dexterity) + number(skill);
   const duration = clamp(positiveRate(weaponRecovery, 15) / 15 - 0.3 * (score - 14), 0.1, 30);
@@ -118,7 +135,7 @@ function recoveryRate(dexterity, skill, weaponRecovery) {
 }
 
 function decisionRate(unit) {
-  return positiveRate((number(unit?.stats?.intellect) + number(unit?.stats?.initiative)) * 5);
+  return positiveRate((effectiveAtbAttribute(unit, "intellect") + number(unit?.stats?.initiative)) * 5);
 }
 
 function decisionMultiplier(unit) {
@@ -166,6 +183,8 @@ function buildAction(room, unit, request, { queued = false } = {}) {
   const template = clone(ACTIONS[request.actionId] || ACTIONS.improvised);
   const stats = unit.stats;
   const weapon = unit.weapon;
+  const atbPerception = effectiveAtbAttribute(unit, "perception");
+  const atbDexterity = effectiveAtbAttribute(unit, "dexterity");
   const target = room.units.find((entry) => entry.id === request.targetId) || null;
   const action = {
     ...template,
@@ -202,17 +221,17 @@ function buildAction(room, unit, request, { queued = false } = {}) {
     action.movement = { distance, speed, duration };
   } else if (template.kind === "item") {
     action.rates = {
-      preparation: positiveRate((stats.perception + stats.initiative) * 10 + 300),
-      execution: positiveRate(stats.dexterity + stats.initiative + 5),
-      recovery: positiveRate((stats.dexterity + stats.initiative) * 10 + 300),
+      preparation: positiveRate((atbPerception + stats.initiative) * 10 + 300),
+      execution: positiveRate(atbDexterity + stats.initiative + 5),
+      recovery: positiveRate((atbDexterity + stats.initiative) * 10 + 300),
     };
   } else {
     const skill = number(stats[template.skill]);
     const preparationMultiplier = unit.lastExecutedActionId === template.id ? 20 : 10;
     action.rates = {
-      preparation: positiveRate((stats.perception + skill + weapon.preparation) * preparationMultiplier),
-      execution: positiveRate(stats.dexterity + skill + weapon.execution),
-      recovery: recoveryRate(stats.dexterity, skill, weapon.recovery),
+      preparation: positiveRate((atbPerception + skill + weapon.preparation) * preparationMultiplier),
+      execution: positiveRate(atbDexterity + skill + weapon.execution),
+      recovery: recoveryRate(atbDexterity, skill, weapon.recovery),
     };
     action.preparationMultiplier = preparationMultiplier;
   }
@@ -894,9 +913,13 @@ function createUnit(body) {
   const stats = normalizeStats(body.stats || body);
   return {
     id: id(),
+    characterId: String(body.characterId || "").trim().slice(0, 100),
     playerName: String(body.playerName || "Player").trim().slice(0, 40) || "Player",
     characterName: String(body.characterName || "Character").trim().slice(0, 40) || "Character",
     stats,
+    experience: normalizeExperience(body.experience),
+    karma: whole(body.karma, 0, 0, 999999999),
+    coreLost: whole(body.coreLost, 0, 0, 10),
     weapon: normalizeWeapon(body.weapon || body),
     commandWindow: normalizeCommandWindow(body.commandWindow, team),
     phase: "decision",
@@ -910,8 +933,9 @@ function createUnit(body) {
     staggerRate: null,
     staggerImmunity: false,
     poiseLocked: false,
-    poiseMax: stats.composure,
-    poiseRemaining: stats.composure,
+    basePoiseMax: whole(body.poiseMax, stats.composure, 0, 99),
+    poiseMax: whole(body.poiseMax, stats.composure, 0, 99),
+    poiseRemaining: whole(body.poiseMax, stats.composure, 0, 99),
     pendingAttackPoise: { heavyStagger: false, poiseBreaker: false },
     recoveryPoiseStacks: [],
     cleanExecutionCount: 0,
@@ -940,6 +964,21 @@ async function handleAction(req, res) {
     const unit = createUnit(body);
     room.units.push(unit);
     pushLog(room, `${unit.characterName} joined (Decision Rate ${decisionRate(unit)}, Poise ${unit.poiseMax}).`);
+  } else if (action === "awardResource") {
+    const amount = whole(body.amount, 1, 1, 999999);
+    const resource = body.resource === "karma" ? "karma" : "experience";
+    const targets = room.units.filter((unit) => unit.team === "pc" && (body.targetId === "__all__" || unit.id === body.targetId));
+    for (const unit of targets) {
+      if (resource === "karma") unit.karma = whole(unit.karma + amount, 0, 0, 999999999);
+      else {
+        unit.experience.available = whole(unit.experience.available + amount, 0, 0, 999999999);
+        unit.experience.totalEarned = whole(unit.experience.totalEarned + amount, 0, 0, 999999999);
+      }
+    }
+    if (targets.length) {
+      const recipient = body.targetId === "__all__" ? "all PCs" : targets[0].characterName;
+      pushLog(room, "GM awarded   to .");
+    }
   } else if (action === "removeUnit") {
     const unit = room.units.find((entry) => entry.id === body.id);
     room.units = room.units.filter((entry) => entry.id !== body.id);
@@ -1017,7 +1056,7 @@ async function handleAction(req, res) {
     }
   } else if (action === "reset") {
     for (const unit of room.units) {
-      unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.lastExecutedActionId = null; unit.decisionBoost = false; unit.moveDecisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.poiseMax = unit.stats.composure; unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
+      unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.lastExecutedActionId = null; unit.decisionBoost = false; unit.moveDecisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.poiseMax = whole(unit.basePoiseMax, unit.stats.composure, 0, 99); unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
     }
     room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.lastInterruptedId = null; room.lastInterruptedAt = 0; room.notice = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter reset.");
   } else if (action === "clearEncounter") {

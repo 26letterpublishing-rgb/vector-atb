@@ -19,6 +19,7 @@ const seenLogIds = new Set();
 const pendingLogNotices = [];
 let activeLogNoticeCount = 0;
 let noticeGeneration = 0;
+let characterReturnMode = "welcome";
 
 const DEFAULT_COMMAND_WINDOW = 20;
 const KEEP_ALIVE_MS = 30000;
@@ -54,7 +55,7 @@ function $(selector) { return document.querySelector(selector); }
 function $all(selector) { return [...document.querySelectorAll(selector)]; }
 
 const elements = Object.fromEntries(
-  "roomCode connectionStatus welcomePanel createRoom showJoinRoom roomJoinPanel joinRoomCode confirmJoinRoom backToWelcome topbar joinPanel gmPanel gmTopControls playerTopControls playerPanel playerName characterName playerColor joinPlayer openGm rejoinBlock rejoinSelect rejoinPlayer stepTick resetAll clearEncounter undoLastTiming exitCombat gmMuteSound gmAddUnit gmPlayerName gmCharacterName gmCommandWindow gmCommandWindowWrap gmColor gmTeam unitList initiativePanel logPanel readyCount clockState myTurnBanner playerTurnActions playerRoomCode enableAlerts playerLogButton leaveRoom playerFocusScreen playerFocusEyebrow playerFocusCharacter playerFocusLogButton playerFocusRoomCode playerDecisionView playerFocusTimer playerFocusCommandTime playerFocusPrompt playerCommandTrackFill playerFocusActions playerResolutionView playerResolutionAction playerResolutionStatus playerLogDrawer playerLogCommand playerLogCommandTime playerLogList closePlayerLog activePanel activeKicker activeTitle activeMeta logList turnDialog turnDialogKicker activeName activeOwner completeTurn gmDelay gmPanicPause playerPoiseButton playerPoiseCount playerQueueButton playerQueueCount staggerDialog staggerDialogTarget staggerDuration cancelStagger confirmStagger poiseDialog poiseDialogTarget poiseChoiceList cancelPoise staggerResponseDialog staggerResponseTitle staggerResponseText continueStagger ignoreStagger globalNotice actionConfigDialog actionConfigEyebrow actionConfigTitle actionTargetWrap actionTarget actionOtherTargetWrap actionOtherTarget actionDistanceWrap actionDistance improvisedFields improvisedName improvisedTimingMode improvisedModeTime improvisedModeRate improvisedPreparation improvisedPreparationLabel improvisedPreparationUnit improvisedPreparationRisk improvisedExecution improvisedExecutionLabel improvisedExecutionUnit improvisedExecutionRisk improvisedRecovery improvisedRecoveryLabel improvisedRecoveryUnit improvisedRecoveryRisk cancelActionConfig confirmActionConfig queueDialog queuedActionList queueActionChoices closeQueueDialog".split(" ").map((id) => [id, $(`#${id}`)])
+  "roomCode connectionStatus welcomePanel createRoom showJoinRoom showCharacterCreation characterCreator roomJoinPanel joinRoomCode confirmJoinRoom backToWelcome topbar joinPanel gmPanel gmTopControls playerTopControls playerPanel playerName characterName playerColor joinCharacterSelect editJoinCharacter joinPlayer openGm rejoinBlock rejoinSelect rejoinPlayer stepTick resetAll clearEncounter undoLastTiming exitCombat gmMuteSound gmAddUnit gmPlayerName gmCharacterName gmCommandWindow gmCommandWindowWrap gmColor gmTeam unitList initiativePanel logPanel readyCount clockState myTurnBanner playerTurnActions playerRoomCode enableAlerts playerLogButton leaveRoom playerFocusScreen playerFocusEyebrow playerFocusCharacter playerFocusLogButton playerFocusRoomCode playerDecisionView playerFocusTimer playerFocusCommandTime playerFocusPrompt playerCommandTrackFill playerFocusActions playerResolutionView playerResolutionAction playerResolutionStatus playerLogDrawer playerLogCommand playerLogCommandTime playerLogList closePlayerLog openAwardDialog awardDialog awardTarget awardResource awardAmount cancelAward confirmAward activePanel activeKicker activeTitle activeMeta logList turnDialog turnDialogKicker activeName activeOwner completeTurn gmDelay gmPanicPause playerPoiseButton playerPoiseCount playerQueueButton playerQueueCount staggerDialog staggerDialogTarget staggerDuration cancelStagger confirmStagger poiseDialog poiseDialogTarget poiseChoiceList cancelPoise staggerResponseDialog staggerResponseTitle staggerResponseText continueStagger ignoreStagger globalNotice actionConfigDialog actionConfigEyebrow actionConfigTitle actionTargetWrap actionTarget actionOtherTargetWrap actionOtherTarget actionDistanceWrap actionDistance improvisedFields improvisedName improvisedTimingMode improvisedModeTime improvisedModeRate improvisedPreparation improvisedPreparationLabel improvisedPreparationUnit improvisedPreparationRisk improvisedExecution improvisedExecutionLabel improvisedExecutionUnit improvisedExecutionRisk improvisedRecovery improvisedRecoveryLabel improvisedRecoveryUnit improvisedRecoveryRisk cancelActionConfig confirmActionConfig queueDialog queuedActionList queueActionChoices closeQueueDialog".split(" ").map((id) => [id, $(`#${id}`)])
 );
 
 const pcFields = {
@@ -129,7 +130,7 @@ function actionById(actionId) { return actions().find((entry) => entry.id === ac
 function myUnit() { return state?.units.find((unit) => unit.id === myUnitId) || null; }
 function activeUnit() { return state?.units.find((unit) => unit.id === state?.activeId) || null; }
 function commandFor(unit) { return state?.command?.unitId === unit?.id ? state.command : null; }
-function displayedDecisionRate(unit) { return (Number(unit?.stats?.intellect) + Number(unit?.stats?.initiative)) * 5; }
+function displayedDecisionRate(unit) { const intellect = Math.max(1, Number(unit?.stats?.intellect) - (Number(unit?.coreLost) || 0)); return (intellect + Number(unit?.stats?.initiative)) * 5; }
 function displayedDecisionMultiplier(unit) { return Math.max(1, Number(unit?.decisionMultiplier) || (unit?.moveDecisionBoost ? 3 : unit?.decisionBoost ? 2 : 1)); }
 function playerVisibleActions() { return actions().filter((entry) => entry.id !== "improvised"); }
 
@@ -193,6 +194,8 @@ function setMode(nextMode) {
   safeLocalStorageSet("vector-atb-mode", mode);
   document.body.classList.toggle("gm-mode", mode === "gm");
   document.body.classList.toggle("player-mode", mode === "player");
+  document.body.classList.toggle("welcome-mode", mode === "welcome");
+  document.body.classList.toggle("character-mode", mode === "character");
   render();
 }
 
@@ -225,6 +228,8 @@ function receiveState(nextState) {
   const previousEngaged = Boolean(state?.hasEngagedClock);
   const newLogs = (nextState.log || []).filter((entry) => entry?.id && !seenLogIds.has(entry.id));
   state = nextState;
+  const localUnit = state.units?.find((unit) => unit.id === myUnitId);
+  if (localUnit?.characterId) window.VectorCharacters?.syncEconomy(localUnit.characterId, localUnit.experience, localUnit.karma);
   rememberLogs(state.log);
   if (newLogs.length) showGlobalNotices(newLogs);
   if (mode === "gm" && !previousEngaged && state.hasEngagedClock) playCombatStartSting();
@@ -538,22 +543,67 @@ function renderPlayerLog(mine) {
   if (command) elements.playerLogCommandTime.textContent = formatClock(command.remaining);
 }
 
+function refreshJoinCharacterOptions() {
+  if (!elements.joinCharacterSelect || !window.VectorCharacters) return;
+  const previous = elements.joinCharacterSelect.value;
+  const characters = window.VectorCharacters.list();
+  elements.joinCharacterSelect.innerHTML = `<option value="">Manual Entry</option>${characters.map((character) => `<option value="${escapeHtml(character.id)}">${escapeHtml(character.name)}${character.finalized ? "" : " (Draft)"}</option>`).join("")}`;
+  if (characters.some((character) => character.id === previous)) elements.joinCharacterSelect.value = previous;
+  elements.editJoinCharacter.disabled = !elements.joinCharacterSelect.value;
+}
+
+function applyJoinCharacter(characterId) {
+  const payload = window.VectorCharacters?.encounterPayload(characterId);
+  if (!payload) return;
+  elements.characterName.value = payload.character.name;
+  elements.playerColor.value = payload.character.color;
+  for (const [key, id] of Object.entries(pcFields.stats)) {
+    const input = document.getElementById(id);
+    if (input && payload.stats[key] !== undefined) input.value = payload.stats[key];
+  }
+}
+
+function renderAwardTargets() {
+  if (!elements.awardTarget || !state) return;
+  const pcs = state.units.filter((unit) => unit.team === "pc");
+  elements.openAwardDialog.disabled = pcs.length === 0;
+  const previous = elements.awardTarget.value;
+  elements.awardTarget.innerHTML = `<option value="__all__">All PCs</option>${pcs.map((unit) => `<option value="${escapeHtml(unit.id)}">${escapeHtml(unit.characterName)} - ${Number(unit.experience?.available) || 0} EXP / ${Number(unit.karma) || 0} Karma</option>`).join("")}`;
+  if (pcs.some((unit) => unit.id === previous)) elements.awardTarget.value = previous;
+}
+
+function openAwardPanel() {
+  renderAwardTargets();
+  if (!state?.units.some((unit) => unit.team === "pc")) return;
+  elements.awardAmount.value = "1";
+  elements.awardDialog.classList.remove("hidden");
+  elements.awardAmount.focus();
+}
+
+function closeAwardPanel() {
+  elements.awardDialog.classList.add("hidden");
+}
 function render() {
-  if (!currentRoomCode && !["welcome", "roomJoin"].includes(mode)) mode = "welcome";
+  if (!currentRoomCode && !["welcome", "roomJoin", "character"].includes(mode)) mode = "welcome";
   document.body.classList.toggle("gm-mode", mode === "gm");
   document.body.classList.toggle("player-mode", mode === "player");
+  document.body.classList.toggle("welcome-mode", mode === "welcome");
+  document.body.classList.toggle("character-mode", mode === "character");
   elements.welcomePanel.classList.toggle("hidden", mode !== "welcome");
+  elements.characterCreator.classList.toggle("hidden", mode !== "character");
   elements.roomJoinPanel.classList.toggle("hidden", mode !== "roomJoin");
   elements.joinPanel.classList.toggle("hidden", mode !== "join");
   elements.gmPanel.classList.toggle("hidden", mode !== "gm");
   elements.gmTopControls.classList.toggle("hidden", mode !== "gm");
   elements.gmMuteSound.classList.toggle("hidden", mode !== "gm");
   elements.playerTopControls.classList.toggle("hidden", mode !== "player");
-  elements.topbar.classList.toggle("hidden", ["welcome", "roomJoin"].includes(mode));
+  elements.topbar.classList.toggle("hidden", ["welcome", "roomJoin", "character"].includes(mode));
   elements.initiativePanel.classList.toggle("hidden", !state || !["gm", "player"].includes(mode));
   elements.logPanel.classList.toggle("hidden", !state || mode !== "gm");
   elements.activePanel.classList.toggle("hidden", !state || mode !== "gm");
   elements.gmPanicPause.classList.toggle("hidden", mode !== "gm" || !state);
+  elements.connectionStatus.classList.toggle("hidden", mode === "character");
+  refreshJoinCharacterOptions();
   if (!state) return;
   if (actionConfigContext?.commandSlowed && state.activeId !== actionConfigContext.unitId) closeActionConfig({ restoreCommand: false });
   const previousRejoinId = elements.rejoinSelect.value || myUnitId;
@@ -576,6 +626,7 @@ function render() {
   renderPlayerLog(mine);
   elements.enableAlerts.textContent = alertsEnabled ? "Sound: On" : "Sound: Off";
   elements.undoLastTiming.disabled = !state.undoAvailable;
+  renderAwardTargets();
 }
 
 function targetOptions(unit) {
@@ -700,18 +751,40 @@ elements.createRoom.addEventListener("click", async () => {
   try { const response = await fetch("/api/create-room", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); if (response.ok) { setRoom(await response.json()); myUnitId = ""; setMode("gm"); } } catch { setConnected(false, "Cannot reach the Vector server."); }
 });
 elements.showJoinRoom.addEventListener("click", () => setMode("roomJoin"));
+elements.showCharacterCreation.addEventListener("click", () => { characterReturnMode = "welcome"; window.VectorCharacters?.openNew(); setMode("character"); });
+window.addEventListener("vector-character-close", () => setMode(characterReturnMode));
+window.addEventListener("vector-characters-changed", refreshJoinCharacterOptions);
 elements.backToWelcome.addEventListener("click", () => setMode("welcome"));
 elements.openGm.addEventListener("click", () => setMode("roomJoin"));
 elements.joinRoomCode.addEventListener("input", () => { elements.joinRoomCode.value = elements.joinRoomCode.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4); });
+elements.joinCharacterSelect.addEventListener("change", () => { elements.editJoinCharacter.disabled = !elements.joinCharacterSelect.value; if (elements.joinCharacterSelect.value) applyJoinCharacter(elements.joinCharacterSelect.value); });
+elements.editJoinCharacter.addEventListener("click", () => { if (!elements.joinCharacterSelect.value) return; characterReturnMode = "join"; window.VectorCharacters?.openCharacter(elements.joinCharacterSelect.value); setMode("character"); });
 elements.confirmJoinRoom.addEventListener("click", async () => {
   const code = elements.joinRoomCode.value.trim().toUpperCase(); if (!code) return;
   try { const response = await fetch(`/api/state?room=${encodeURIComponent(code)}`); if (!response.ok) return setConnected(false, "Room not found."); setRoom(await response.json()); setMode("join"); } catch { setConnected(false, "Cannot reach the room."); }
 });
 elements.joinPlayer.addEventListener("click", async () => {
   enablePlayerAlerts();
-  const next = await action({ action: "join", playerName: elements.playerName.value || "Player", characterName: elements.characterName.value || "Character", color: elements.playerColor.value, controlledBy: "player", team: "pc", commandWindow: DEFAULT_COMMAND_WINDOW, ...collectEntryData(pcFields) });
+  const saved = window.VectorCharacters?.encounterPayload(elements.joinCharacterSelect.value);
+  const entry = collectEntryData(pcFields);
+  if (saved) entry.stats = saved.stats;
+  const next = await action({
+    action: "join",
+    playerName: elements.playerName.value || "Player",
+    characterName: saved?.character.name || elements.characterName.value || "Character",
+    color: saved?.character.color || elements.playerColor.value,
+    controlledBy: "player",
+    team: "pc",
+    commandWindow: DEFAULT_COMMAND_WINDOW,
+    ...entry,
+    ...(saved ? { characterId: saved.characterId, experience: saved.experience, karma: saved.karma, poiseMax: saved.poiseMax, coreLost: saved.coreLost } : {}),
+  });
   if (!next) return;
-  const unit = next.units.at(-1); myUnitId = unit.id; safeLocalStorageSet("vector-atb-unit-id", myUnitId); setMode("player");
+  const unit = saved ? [...next.units].reverse().find((candidate) => candidate.characterId === saved.characterId) : next.units.at(-1);
+  if (!unit) return;
+  myUnitId = unit.id;
+  safeLocalStorageSet("vector-atb-unit-id", myUnitId);
+  setMode("player");
 });
 elements.rejoinPlayer.addEventListener("click", () => { myUnitId = elements.rejoinSelect.value; safeLocalStorageSet("vector-atb-unit-id", myUnitId); setMode("player"); });
 
@@ -770,6 +843,17 @@ elements.closeQueueDialog.addEventListener("click", closeQueueDialog);
 elements.queueActionChoices.addEventListener("click", (event) => { const button = event.target.closest("button[data-queue-action]"); if (!button) return; closeQueueDialog(); openActionConfig(myUnitId, button.dataset.queueAction, { queue: true }); });
 elements.queuedActionList.addEventListener("click", async (event) => { const button = event.target.closest("button[data-remove-queue]"); if (!button) return; await action({ action: "removeQueuedAction", id: myUnitId, index: Number(button.dataset.removeQueue) }); renderQueue(myUnit()); });
 
+elements.openAwardDialog.addEventListener("click", openAwardPanel);
+elements.cancelAward.addEventListener("click", closeAwardPanel);
+elements.confirmAward.addEventListener("click", async () => {
+  const amount = Math.max(1, Math.round(Number(elements.awardAmount.value) || 1));
+  const targetId = elements.awardTarget.value;
+  const resource = elements.awardResource.value;
+  closeAwardPanel();
+  await action({ action: "awardResource", targetId, resource, amount }, "resolve");
+});
+elements.awardDialog.addEventListener("keydown", (event) => { if (event.key === "Escape") closeAwardPanel(); });
+
 elements.completeTurn.addEventListener("click", () => action({ action: "completeResolution" }, "resolve"));
 elements.gmPanicPause.addEventListener("click", () => { const now = performance.now(); if (now - lastGmClockClickAt < 450) return; lastGmClockClickAt = now; action({ action: "toggleClock" }, state?.running ? "pause" : "start"); });
 elements.stepTick.addEventListener("click", () => action({ action: "step" }));
@@ -800,6 +884,6 @@ setInterval(async () => {
 
 nextNpcDefault();
 applyNpcDefaultPreview({ force: true });
-if (currentRoomCode && !["welcome", "roomJoin"].includes(mode)) {
+if (currentRoomCode && !["welcome", "roomJoin", "character"].includes(mode)) {
   fetch(`/api/state?room=${encodeURIComponent(currentRoomCode)}`).then((response) => response.ok ? response.json() : null).then((next) => { if (next) setRoom(next); else returnToWelcome("That room expired."); }).catch(() => setConnected(false, "Cannot reconnect."));
 } else render();
