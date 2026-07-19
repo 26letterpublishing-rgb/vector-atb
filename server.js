@@ -281,6 +281,7 @@ function createRoom() {
     commandExpired: false,
     lastInterruptedId: null,
     lastInterruptedAt: 0,
+    notice: null,
     lastKeepAliveAt: Date.now(),
     lastTick: Date.now(),
     hasEngagedClock: false,
@@ -317,7 +318,7 @@ function setCommandSpeed(room, nextSpeed) {
 }
 
 function queueIsAvailable(room) {
-  return !room.running || room.hardPaused || room.pausedForTurn || room.pausedForResolution || room.pausedForStagger;
+  return true;
 }
 
 function publicState(room) {
@@ -338,6 +339,7 @@ function publicState(room) {
     hasEngagedClock: room.hasEngagedClock,
     lastInterruptedId: room.lastInterruptedId,
     lastInterruptedAt: room.lastInterruptedAt,
+    notice: clone(room.notice),
     lastKeepAliveAt: room.lastKeepAliveAt,
     threshold: room.threshold,
     actions: actionMetadata(),
@@ -359,6 +361,10 @@ function pushLog(room, text) {
   room.log = room.log.slice(-100);
 }
 
+function pushNotice(room, text, type = "info") {
+  room.notice = { id: id(), text, type, at: Date.now() };
+}
+
 function snapshotRoom(room) {
   return {
     running: room.running,
@@ -376,6 +382,7 @@ function snapshotRoom(room) {
     commandExpired: room.commandExpired,
     lastInterruptedId: room.lastInterruptedId,
     lastInterruptedAt: room.lastInterruptedAt,
+    notice: clone(room.notice),
     hasEngagedClock: room.hasEngagedClock,
     units: clone(room.units),
     log: clone(room.log),
@@ -567,6 +574,10 @@ function finishPendingStagger(room) {
 function applyStaggerNow(room, unit, rawDuration, { poiseBreaker = false } = {}) {
   if (!unit) return false;
   let duration = clamp(number(rawDuration, 1), 0.1, 3600);
+  if (unit.phase === "stagger") {
+    pushLog(room, `${unit.characterName} is already STAGGERED. Additional STAGGER was ignored.`);
+    return true;
+  }
   if (poiseBreaker) {
     clearPoiseBuffs(unit);
     unit.poiseLocked = true;
@@ -581,19 +592,6 @@ function applyStaggerNow(room, unit, rawDuration, { poiseBreaker = false } = {})
 
   unit.cleanExecutionCount = 0;
   const newRate = THRESHOLD / duration;
-  if (unit.phase === "stagger") {
-    const currentRate = positiveRate(unit.staggerRate);
-    const remaining = number(unit.phaseProgress) / currentRate;
-    if (duration > remaining) {
-      unit.phaseProgress = THRESHOLD;
-      unit.staggerRate = newRate;
-      pushLog(room, `${unit.characterName}'s STAGGER was replaced by a longer ${duration.toFixed(2)} sec STAGGER.`);
-    } else {
-      unit.staggerRate = Math.max(0.01, currentRate - 1);
-      pushLog(room, `${unit.characterName}'s STAGGER Rate was reduced by 1.`);
-    }
-    return true;
-  }
 
   const cancelledLabel = unit.currentAction?.label || (room.activeId === unit.id ? "Decision" : "current action");
   const releasedPause = cancelPausedActionFor(room, unit);
@@ -611,6 +609,10 @@ function applyStaggerNow(room, unit, rawDuration, { poiseBreaker = false } = {})
 
 function requestStagger(room, unit, rawDuration) {
   if (!unit) return false;
+  if (unit.phase === "stagger") {
+    pushLog(room, `${unit.characterName} is already STAGGERED. Additional STAGGER was ignored.`);
+    return true;
+  }
   let duration = clamp(number(rawDuration, 1), 0.1, 3600);
   const source = room.activeAction?.action;
   const matchesTarget = Boolean(source?.targetId && source.targetId === unit.id);
@@ -791,6 +793,12 @@ function addProgress(room, seconds) {
     if (expiredId && event.unit.id !== expiredId) interruptExpiredDecision(room);
     pauseForDecision(room, event.unit);
   } else if (event.type === "execution") {
+    if (event.unit.currentAction?.kind === "move") {
+      const distance = whole(event.unit.currentAction.movement?.distance, 1, 1, 999999);
+      const movementNotice = `${event.unit.characterName} moves ${distance} ${distance === 1 ? "space" : "spaces"}.`;
+      pushLog(room, movementNotice);
+      pushNotice(room, movementNotice, "movement");
+    }
     completeExecutionPoise(room, event.unit);
     if (event.unit.currentAction?.hasResolution) pauseForResolution(room, event.unit);
     else startRecovery(room, event.unit);
@@ -966,14 +974,14 @@ async function handleAction(req, res) {
   } else if (action === "queueAction") {
     const unit = room.units.find((entry) => entry.id === body.id);
     const request = actionRequestFromBody(body);
-    if (unit && queueIsAvailable(room) && unit.controlledBy === "player" && unit.actionQueue.length < 2 && requestIsValid(room, request)) {
+    if (unit && unit.controlledBy === "player" && unit.actionQueue.length < 2 && requestIsValid(room, request)) {
       unit.actionQueue.push(request);
       pushLog(room, `${unit.characterName} queued ${ACTIONS[request.actionId].label}.`);
     }
   } else if (action === "removeQueuedAction") {
     const unit = room.units.find((entry) => entry.id === body.id);
     const index = whole(body.index, -1, -1, 1);
-    if (unit && queueIsAvailable(room) && index >= 0 && index < unit.actionQueue.length) unit.actionQueue.splice(index, 1);
+    if (unit && index >= 0 && index < unit.actionQueue.length) unit.actionQueue.splice(index, 1);
   } else if (action === "completeResolution") {
     if (room.activeAction) {
       const unit = room.units.find((entry) => entry.id === room.activeAction.unitId);
@@ -995,9 +1003,9 @@ async function handleAction(req, res) {
     for (const unit of room.units) {
       unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.lastExecutedActionId = null; unit.decisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.poiseMax = unit.stats.composure; unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
     }
-    room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.lastInterruptedId = null; room.lastInterruptedAt = 0; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter reset.");
+    room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.lastInterruptedId = null; room.lastInterruptedAt = 0; room.notice = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter reset.");
   } else if (action === "clearEncounter") {
-    room.units = []; room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter cleared.");
+    room.units = []; room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.notice = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter cleared.");
   } else if (action === "nudge") {
     const unit = room.units.find((entry) => entry.id === body.id);
     if (unit && !room.pausedForTurn && !room.pausedForResolution && !room.pausedForStagger) {

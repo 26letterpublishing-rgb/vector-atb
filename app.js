@@ -15,6 +15,8 @@ let actionConfigContext = null;
 let improvisedInputMode = "time";
 let staggerTargetId = "";
 let poiseTargetId = "";
+let lastNoticeId = "";
+let noticeTimer = null;
 
 const DEFAULT_COMMAND_WINDOW = 20;
 const KEEP_ALIVE_MS = 30000;
@@ -50,7 +52,7 @@ function $(selector) { return document.querySelector(selector); }
 function $all(selector) { return [...document.querySelectorAll(selector)]; }
 
 const elements = Object.fromEntries(
-  "roomCode connectionStatus welcomePanel createRoom showJoinRoom roomJoinPanel joinRoomCode confirmJoinRoom backToWelcome topbar joinPanel gmPanel gmTopControls playerTopControls playerPanel playerName characterName playerColor joinPlayer openGm rejoinBlock rejoinSelect rejoinPlayer stepTick resetAll clearEncounter undoLastTiming exitCombat gmMuteSound gmAddUnit gmPlayerName gmCharacterName gmCommandWindow gmCommandWindowWrap gmColor gmTeam unitList initiativePanel logPanel readyCount clockState myTurnBanner playerTurnActions playerRoomCode enableAlerts playerLogButton leaveRoom playerFocusScreen playerFocusEyebrow playerFocusCharacter playerFocusLogButton playerFocusRoomCode playerDecisionView playerFocusTimer playerFocusCommandTime playerFocusPrompt playerCommandTrackFill playerFocusActions playerResolutionView playerResolutionAction playerResolutionStatus playerLogDrawer playerLogCommand playerLogCommandTime playerLogList closePlayerLog activePanel activeKicker activeTitle activeMeta logList turnDialog turnDialogKicker activeName activeOwner completeTurn gmDelay gmPanicPause playerPoiseButton playerPoiseCount playerQueueButton playerQueueCount staggerDialog staggerDialogTarget staggerDuration cancelStagger confirmStagger poiseDialog poiseDialogTarget poiseChoiceList cancelPoise staggerResponseDialog staggerResponseTitle staggerResponseText continueStagger ignoreStagger actionConfigDialog actionConfigEyebrow actionConfigTitle actionTargetWrap actionTarget actionOtherTargetWrap actionOtherTarget actionDistanceWrap actionDistance improvisedFields improvisedName improvisedTimingMode improvisedModeTime improvisedModeRate improvisedPreparation improvisedPreparationLabel improvisedPreparationUnit improvisedPreparationRisk improvisedExecution improvisedExecutionLabel improvisedExecutionUnit improvisedExecutionRisk improvisedRecovery improvisedRecoveryLabel improvisedRecoveryUnit improvisedRecoveryRisk cancelActionConfig confirmActionConfig queueDialog queuedActionList queueActionChoices closeQueueDialog".split(" ").map((id) => [id, $(`#${id}`)])
+  "roomCode connectionStatus welcomePanel createRoom showJoinRoom roomJoinPanel joinRoomCode confirmJoinRoom backToWelcome topbar joinPanel gmPanel gmTopControls playerTopControls playerPanel playerName characterName playerColor joinPlayer openGm rejoinBlock rejoinSelect rejoinPlayer stepTick resetAll clearEncounter undoLastTiming exitCombat gmMuteSound gmAddUnit gmPlayerName gmCharacterName gmCommandWindow gmCommandWindowWrap gmColor gmTeam unitList initiativePanel logPanel readyCount clockState myTurnBanner playerTurnActions playerRoomCode enableAlerts playerLogButton leaveRoom playerFocusScreen playerFocusEyebrow playerFocusCharacter playerFocusLogButton playerFocusRoomCode playerDecisionView playerFocusTimer playerFocusCommandTime playerFocusPrompt playerCommandTrackFill playerFocusActions playerResolutionView playerResolutionAction playerResolutionStatus playerLogDrawer playerLogCommand playerLogCommandTime playerLogList closePlayerLog activePanel activeKicker activeTitle activeMeta logList turnDialog turnDialogKicker activeName activeOwner completeTurn gmDelay gmPanicPause playerPoiseButton playerPoiseCount playerQueueButton playerQueueCount staggerDialog staggerDialogTarget staggerDuration cancelStagger confirmStagger poiseDialog poiseDialogTarget poiseChoiceList cancelPoise staggerResponseDialog staggerResponseTitle staggerResponseText continueStagger ignoreStagger globalNotice actionConfigDialog actionConfigEyebrow actionConfigTitle actionTargetWrap actionTarget actionOtherTargetWrap actionOtherTarget actionDistanceWrap actionDistance improvisedFields improvisedName improvisedTimingMode improvisedModeTime improvisedModeRate improvisedPreparation improvisedPreparationLabel improvisedPreparationUnit improvisedPreparationRisk improvisedExecution improvisedExecutionLabel improvisedExecutionUnit improvisedExecutionRisk improvisedRecovery improvisedRecoveryLabel improvisedRecoveryUnit improvisedRecoveryRisk cancelActionConfig confirmActionConfig queueDialog queuedActionList queueActionChoices closeQueueDialog".split(" ").map((id) => [id, $(`#${id}`)])
 );
 
 const pcFields = {
@@ -185,6 +187,7 @@ function setMode(nextMode) {
 
 function setRoom(nextState) {
   state = nextState;
+  lastNoticeId = state.notice?.id || "";
   currentRoomCode = state.roomCode;
   safeLocalStorageSet("vector-atb-room-code", currentRoomCode);
   elements.roomCode.textContent = currentRoomCode;
@@ -197,10 +200,22 @@ function receiveState(nextState) {
   if (!nextState || (state && nextState.revision < state.revision)) return;
   const previousEngaged = Boolean(state?.hasEngagedClock);
   state = nextState;
+  if (state.notice?.id && state.notice.id !== lastNoticeId) showGlobalNotice(state.notice);
   if (mode === "gm" && !previousEngaged && state.hasEngagedClock) playCombatStartSting();
   notifyTurnIfNeeded();
   notifyInterruptionIfNeeded();
   render();
+}
+
+function showGlobalNotice(notice) {
+  lastNoticeId = notice.id;
+  elements.globalNotice.textContent = notice.text;
+  elements.globalNotice.dataset.type = notice.type || "info";
+  elements.globalNotice.classList.remove("hidden", "showing");
+  void elements.globalNotice.offsetWidth;
+  elements.globalNotice.classList.add("showing");
+  clearTimeout(noticeTimer);
+  noticeTimer = setTimeout(() => elements.globalNotice.classList.add("hidden"), 3600);
 }
 
 async function action(payload, sound = "tap") {
@@ -309,9 +324,10 @@ function updateUnitCard(card, unit) {
 function renderUnitList(units) {
   const gm = mode === "gm";
   const player = mode === "player";
-  const wanted = new Set(units.map((unit) => unit.id));
+  const orderedUnits = player ? [...units].sort((a, b) => Number(b.id === myUnitId) - Number(a.id === myUnitId)) : units;
+  const wanted = new Set(orderedUnits.map((unit) => unit.id));
   for (const card of elements.unitList.querySelectorAll("[data-unit-id]")) if (!wanted.has(card.dataset.unitId)) card.remove();
-  units.forEach((unit, index) => {
+  orderedUnits.forEach((unit, index) => {
     let card = elements.unitList.querySelector(`[data-unit-id="${CSS.escape(unit.id)}"]`);
     const signature = unitStructureSignature(unit, gm, player);
     if (!card || card.dataset.signature !== signature) {
@@ -419,10 +435,16 @@ function renderPoiseControls(mine) {
 function renderQueue(mine) {
   const show = mode === "player" && Boolean(mine);
   elements.playerQueueButton.classList.toggle("hidden", !show);
-  elements.playerQueueButton.disabled = !state?.queueAvailable;
+  elements.playerQueueButton.disabled = false;
   if (mine) elements.playerQueueCount.textContent = `${mine.actionQueue.length}/2`;
-  if (!state?.queueAvailable && !elements.queueDialog.classList.contains("hidden")) closeQueueDialog();
   if (elements.queueDialog.classList.contains("hidden") || !mine) return;
+  const signature = JSON.stringify({
+    queue: mine.actionQueue.map((entry) => [entry.actionId, entry.targetId, entry.distance]),
+    targets: state.units.map((unit) => [unit.id, unit.characterName]),
+    actions: playerVisibleActions().map((entry) => [entry.id, entry.label]),
+  });
+  if (elements.queueDialog.dataset.signature === signature) return;
+  elements.queueDialog.dataset.signature = signature;
   elements.queuedActionList.innerHTML = mine.actionQueue.length ? mine.actionQueue.map((entry, index) => `<article><div><strong>${escapeHtml(actionById(entry.actionId).label)}</strong><span>${entry.targetId ? escapeHtml(state.units.find((unit) => unit.id === entry.targetId)?.characterName || "Invalid target") : entry.distance ? `${formatRate(entry.distance)} units` : "Configured"}</span></div><button type="button" data-remove-queue="${index}" aria-label="Remove queued action">&times;</button></article>`).join("") : `<p class="queue-empty">No actions queued.</p>`;
   elements.queueActionChoices.innerHTML = mine.actionQueue.length >= 2 ? "" : playerVisibleActions().map((entry) => `<button type="button" data-queue-action="${entry.id}">${escapeHtml(entry.label)}</button>`).join("");
 }
@@ -515,6 +537,11 @@ function openActionConfig(unitId, actionId, { queue = false } = {}) {
   elements.actionConfigEyebrow.textContent = queue ? "Queue Action" : template.id === "improvised" ? "GM Special Action" : "Configure Action";
   elements.actionConfigTitle.textContent = template.label;
   elements.actionDistanceWrap.classList.toggle("hidden", template.kind !== "move");
+  if (template.kind === "move") {
+    elements.actionDistance.min = "1";
+    elements.actionDistance.step = "1";
+    elements.actionDistance.value = String(Math.max(1, Math.round(Number(elements.actionDistance.value) || 1)));
+  }
   elements.actionTargetWrap.classList.toggle("hidden", template.targetMode === "none");
   elements.improvisedFields.classList.toggle("hidden", template.id !== "improvised" || mode !== "gm");
   if (template.id === "improvised" && mode === "gm") setImprovisedInputMode("time");
@@ -571,8 +598,8 @@ function openPoiseDialog(unitId) { poiseTargetId = unitId; elements.poiseDialog.
 function closePoiseDialog() { poiseTargetId = ""; elements.poiseDialog.classList.add("hidden"); document.body.classList.remove("poise-modal-open"); }
 function openStaggerDialog(unitId) { const unit = state?.units.find((entry) => entry.id === unitId); if (!unit) return; staggerTargetId = unitId; elements.staggerDialogTarget.textContent = unit.characterName; elements.staggerDuration.value = "5"; elements.staggerDialog.classList.remove("hidden"); elements.staggerDuration.focus(); }
 function closeStaggerDialog() { staggerTargetId = ""; elements.staggerDialog.classList.add("hidden"); }
-function openQueueDialog() { if (!state?.queueAvailable) return; elements.queueDialog.classList.remove("hidden"); renderQueue(myUnit()); }
-function closeQueueDialog() { elements.queueDialog.classList.add("hidden"); }
+function openQueueDialog() { elements.queueDialog.dataset.signature = ""; elements.queueDialog.classList.remove("hidden"); renderQueue(myUnit()); }
+function closeQueueDialog() { elements.queueDialog.classList.add("hidden"); elements.queueDialog.dataset.signature = ""; }
 function openPlayerLog() { elements.playerLogDrawer.classList.remove("hidden"); document.body.classList.add("player-log-open"); }
 function closePlayerLogDrawer() { elements.playerLogDrawer.classList.add("hidden"); document.body.classList.remove("player-log-open"); }
 
@@ -665,6 +692,7 @@ elements.playerFocusActions.addEventListener("pointercancel", () => { playerPoin
 elements.playerFocusActions.addEventListener("click", (event) => { if (performance.now() - lastPlayerPointerActivationAt < 700) return; const button = event.target.closest("button[data-action-id]"); if (button) openActionConfig(myUnitId, button.dataset.actionId); });
 
 elements.actionTarget.addEventListener("change", () => elements.actionOtherTargetWrap.classList.toggle("hidden", elements.actionTarget.value !== "__other__"));
+elements.actionDistance.addEventListener("change", () => { elements.actionDistance.value = String(Math.max(1, Math.round(Number(elements.actionDistance.value) || 1))); });
 elements.improvisedModeTime.addEventListener("click", () => setImprovisedInputMode("time"));
 elements.improvisedModeRate.addEventListener("click", () => setImprovisedInputMode("rate"));
 elements.cancelActionConfig.addEventListener("click", closeActionConfig);
