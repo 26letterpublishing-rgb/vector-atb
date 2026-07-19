@@ -5258,3 +5258,207 @@ body.poise-modal-open {
   .global-notice { gap: 5px; }
   .global-notice-item { padding: 8px 10px; font-size: 0.76rem; line-height: 1.15; }
 }
+
+/* GM combat card density and current damage layer */
+.gm-mode .vector-unit-card {
+  position: relative;
+  padding: 8px 9px;
+  overflow: visible;
+}
+
+.gm-mode .vector-icon-button,
+.gm-unit-settings > summary {
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
+  min-height: 36px;
+  max-width: 36px;
+  padding: 0;
+  flex: 0 0 36px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+}
+
+.gm-unit-settings {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+}
+
+.gm-unit-settings > summary {
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(150, 232, 206, 0.36);
+  background: linear-gradient(180deg, rgba(26, 46, 43, 0.96), rgba(5, 13, 13, 0.98));
+  color: #d9fff2;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  cursor: pointer;
+  list-style: none;
+}
+
+.gm-unit-settings > summary::-webkit-details-marker { display: none; }
+.gm-unit-settings > summary span {
+  display: block;
+  margin-top: -7px;
+  font-size: 1.35rem;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.gm-unit-settings[open] > summary {
+  border-color: #39e58f;
+  box-shadow: 0 0 14px rgba(57, 229, 143, 0.24);
+}
+
+.gm-mode .vector-unit-head .gm-unit-settings > .unit-actions {
+  position: absolute;
+  z-index: 50;
+  top: calc(100% + 7px);
+  right: 0;
+  display: flex;
+  width: min(540px, calc(100vw - 40px));
+  min-width: 280px;
+  padding: 9px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
+  flex-wrap: wrap;
+  border: 1px solid rgba(57, 229, 143, 0.36);
+  border-radius: 6px;
+  background: rgba(4, 12, 12, 0.98);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.64), 0 0 20px rgba(57, 229, 143, 0.12);
+}
+
+.gm-mode .vector-unit-head .gm-unit-settings > .unit-actions button { flex: 0 0 auto; }
+
+.gm-damage-strip {
+  display: grid;
+  grid-template-columns: auto minmax(120px, 1fr) auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 15px;
+  margin: -2px 1px 5px;
+  color: #8fa39c;
+  font-size: 0.58rem;
+  font-weight: 850;
+  line-height: 1;
+  text-transform: uppercase;
+}
+
+.gm-damage-strip > strong {
+  color: #c8d9d3;
+  font-size: 0.58rem;
+}
+
+.gm-damage-strip > span { font-variant-numeric: tabular-nums; }
+
+.gm-damage-points {
+  display: grid;
+  grid-template-columns: repeat(10, 11px);
+  align-items: center;
+  gap: 3px;
+}
+
+.gm-damage-point {
+  position: relative;
+  display: block;
+  width: 11px;
+  height: 11px;
+  background: rgba(163, 184, 177, 0.18);
+  border: 1px solid rgba(184, 205, 198, 0.42);
+}
+
+.gm-damage-point.filled {
+  background: #d9fff2;
+  border-color: #ffffff;
+  box-shadow: 0 0 6px rgba(129, 255, 214, 0.42);
+}
+
+.gm-damage-point.triangle {
+  border: 0;
+  clip-path: polygon(50% 3%, 98% 96%, 2% 96%);
+}
+
+.gm-damage-point.square { border-radius: 1px; }
+.gm-damage-point.circle { border-radius: 50%; }
+
+.gm-damage-point.cross {
+  border: 0;
+  background: transparent;
+}
+
+.gm-damage-point.cross::before,
+.gm-damage-point.cross::after {
+  content: "";
+  position: absolute;
+  inset: 4px 0;
+  background: rgba(184, 205, 198, 0.42);
+  transform: rotate(45deg);
+}
+
+.gm-damage-point.cross::after { transform: rotate(-45deg); }
+.gm-damage-point.cross.filled::before,
+.gm-damage-point.cross.filled::after {
+  background: #ff8a8a;
+  box-shadow: 0 0 5px rgba(255, 76, 76, 0.45);
+}
+
+@media (max-width: 720px) {
+  .gm-mode .vector-unit-card { padding: 7px 8px; }
+  .gm-mode .vector-unit-head {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    gap: 4px 6px;
+    margin-bottom: 5px;
+  }
+  .gm-mode .vector-unit-head .vector-unit-identity {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+  .gm-mode .vector-unit-head .unit-readout {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 92px;
+  }
+  .gm-mode .vector-unit-head .vector-card-tools {
+    grid-column: 3;
+    grid-row: 1;
+    justify-self: end;
+    margin: 0;
+  }
+  .gm-mode .vector-unit-head .vector-action-line {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+  .gm-mode .vector-icon-button,
+  .gm-unit-settings > summary {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    max-width: 32px;
+    flex-basis: 32px;
+  }
+  .gm-unit-settings {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+  }
+  .gm-mode .vector-unit-head .gm-unit-settings > .unit-actions {
+    width: min(330px, calc(100vw - 24px));
+    min-width: 260px;
+  }
+  .gm-damage-strip {
+    grid-template-columns: 48px minmax(0, 1fr) 28px;
+    gap: 5px;
+    margin-bottom: 4px;
+  }
+  .gm-damage-points {
+    grid-template-columns: repeat(10, minmax(7px, 10px));
+    gap: 2px;
+  }
+  .gm-damage-point {
+    width: min(10px, 2.6vw);
+    height: min(10px, 2.6vw);
+  }
+}

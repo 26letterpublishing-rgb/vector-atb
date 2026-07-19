@@ -104,6 +104,20 @@ function normalizeExperience(source = {}) {
   };
 }
 
+function normalizeDamage(source = {}, coreLost = 0) {
+  const guardActive = Boolean(source.guard?.active);
+  const shellActive = Boolean(source.shell?.active);
+  const coreCurrent = source.core?.current !== undefined
+    ? whole(source.core.current, 10, 0, 10)
+    : Math.max(0, 10 - whole(coreLost, 0, 0, 10));
+  return {
+    guard: { active: guardActive, current: guardActive ? whole(source.guard?.current, 10, 0, 10) : 0, max: 10 },
+    shell: { active: shellActive, current: shellActive ? whole(source.shell?.current, 10, 0, 10) : 0, max: 10 },
+    stability: { active: true, current: whole(source.stability?.current, 10, 0, 10), max: 10 },
+    core: { active: true, current: coreCurrent, max: 10 },
+  };
+}
+
 function normalizeWeapon(source = {}) {
   return {
     preparation: positiveRate(source.preparation, 10),
@@ -306,6 +320,7 @@ function createRoom() {
     commandExpired: false,
     lastInterruptedId: null,
     lastInterruptedAt: 0,
+    lastAward: null,
     notice: null,
     lastKeepAliveAt: Date.now(),
     lastTick: Date.now(),
@@ -367,6 +382,7 @@ function publicState(room) {
     lastInterruptedId: room.lastInterruptedId,
     lastInterruptedAt: room.lastInterruptedAt,
     notice: clone(room.notice),
+    lastAward: clone(room.lastAward),
     lastKeepAliveAt: room.lastKeepAliveAt,
     threshold: room.threshold,
     actions: actionMetadata(),
@@ -756,7 +772,10 @@ function spendPoise(room, unit, use) {
       unit.poiseRemaining -= 2;
       unit.currentAction[use] = true;
       if (use === "heavyStagger") unit.currentAction.rates.recovery *= 0.5;
-      if (use === "poiseBreaker") unit.currentAction.rates.preparation *= 0.5;
+      if (use === "poiseBreaker") {
+        unit.currentAction.rates.preparation *= 0.5;
+        unit.phaseProgress = (THRESHOLD + unit.phaseProgress) / 2;
+      }
       pushLog(room, `${unit.characterName} spent 2 Poise: ${use === "heavyStagger" ? "double STAGGER / double RECOVERY" : "POISE BREAKER"}.`);
     } else {
       const pending = unit.pendingAttackPoise || { heavyStagger: false, poiseBreaker: false };
@@ -927,6 +946,7 @@ async function handleCreateRoom(req, res) {
 function createUnit(body) {
   const team = normalizeTeam(body.team || (body.controlledBy === "player" ? "pc" : "npc"));
   const stats = normalizeStats(body.stats || body);
+  const damage = normalizeDamage(body.damage || {}, body.coreLost);
   return {
     id: id(),
     characterId: String(body.characterId || "").trim().slice(0, 100),
@@ -936,7 +956,8 @@ function createUnit(body) {
     stats,
     experience: normalizeExperience(body.experience),
     karma: whole(body.karma, 0, 0, 999999999),
-    coreLost: whole(body.coreLost, 0, 0, 10),
+    damage,
+    coreLost: Math.max(0, 10 - damage.core.current),
     weapon: normalizeWeapon(body.weapon || body),
     commandWindow: normalizeCommandWindow(body.commandWindow, team),
     phase: "decision",
@@ -950,9 +971,9 @@ function createUnit(body) {
     staggerRate: null,
     staggerImmunity: false,
     poiseLocked: false,
-    basePoiseMax: whole(body.poiseMax, stats.composure, 0, 99),
-    poiseMax: whole(body.poiseMax, stats.composure, 0, 99),
-    poiseRemaining: whole(body.poiseMax, stats.composure, 0, 99),
+    basePoiseMax: whole(stats.composure, 0, 0, 99),
+    poiseMax: whole(stats.composure, 0, 0, 99),
+    poiseRemaining: whole(stats.composure, 0, 0, 99),
     pendingAttackPoise: { heavyStagger: false, poiseBreaker: false },
     recoveryPoiseStacks: [],
     cleanExecutionCount: 0,
@@ -967,13 +988,16 @@ function createUnit(body) {
 }
 
 function characterUpdateFromBody(body, unit) {
+  const stats = normalizeStats(body.stats || unit.stats);
+  const damage = normalizeDamage(body.damage || unit.damage, body.coreLost ?? unit.coreLost);
   return {
     characterId: String(body.characterId || unit.characterId || "").trim().slice(0, 100),
     characterName: String(body.characterName || unit.characterName || "Character").trim().slice(0, 40) || unit.characterName,
     color: normalizeColor(body.color || unit.color),
-    stats: normalizeStats(body.stats || unit.stats),
-    coreLost: whole(body.coreLost, unit.coreLost, 0, 10),
-    poiseMax: whole(body.poiseMax, unit.basePoiseMax, 0, 99),
+    stats,
+    damage,
+    coreLost: Math.max(0, 10 - damage.core.current),
+    poiseMax: whole(stats.composure, 0, 0, 99),
     totalSpent: whole(body.experience?.totalSpent, unit.experience.totalSpent, 0, 999999999),
     totalEarned: whole(body.experience?.totalEarned, unit.experience.totalEarned, 0, 999999999),
   };
@@ -985,10 +1009,11 @@ function applyCharacterUpdate(unit, update) {
   unit.characterName = update.characterName;
   unit.color = update.color;
   unit.stats = update.stats;
-  unit.coreLost = update.coreLost;
-  unit.basePoiseMax = update.poiseMax;
-  unit.poiseMax = update.poiseMax;
-  unit.poiseRemaining = update.poiseMax;
+  unit.damage = update.damage;
+  unit.coreLost = Math.max(0, 10 - unit.damage.core.current);
+  unit.basePoiseMax = update.stats.composure;
+  unit.poiseMax = update.stats.composure;
+  unit.poiseRemaining = unit.poiseMax;
   if (linkingNewCharacter) unit.experience.totalEarned = Math.max(unit.experience.totalEarned, update.totalEarned);
   unit.experience.totalSpent = clamp(update.totalSpent, 0, unit.experience.totalEarned);
   unit.experience.available = Math.max(0, unit.experience.totalEarned - unit.experience.totalSpent);
@@ -1024,6 +1049,12 @@ async function handleAction(req, res) {
     }
     if (targets.length) {
       const recipient = body.targetId === "__all__" ? "all PCs" : targets[0].characterName;
+      room.lastAward = {
+        id: id(),
+        targetIds: targets.map((unit) => unit.id),
+        resource,
+        amount,
+      };
       pushLog(room, `GM awarded ${amount} ${resource === "karma" ? "Karma" : "EXP"} to ${recipient}.`);
     }
   } else if (action === "removeUnit") {
@@ -1115,7 +1146,7 @@ async function handleAction(req, res) {
   } else if (action === "reset") {
     for (const unit of room.units) {
       if (unit.pendingCharacterUpdate) applyCharacterUpdate(unit, unit.pendingCharacterUpdate);
-      unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.lastExecutedActionId = null; unit.decisionBoost = false; unit.moveDecisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.poiseMax = whole(unit.basePoiseMax, unit.stats.composure, 0, 99); unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
+      unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.lastExecutedActionId = null; unit.decisionBoost = false; unit.moveDecisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.basePoiseMax = whole(unit.stats.composure, 0, 0, 99); unit.poiseMax = unit.basePoiseMax; unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
     }
     room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.advancementLocked = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.lastInterruptedId = null; room.lastInterruptedAt = 0; room.notice = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter reset.");
   } else if (action === "clearEncounter") {

@@ -20,6 +20,7 @@ const pendingLogNotices = [];
 let activeLogNoticeCount = 0;
 let noticeGeneration = 0;
 let characterReturnMode = "welcome";
+let lastSeenAwardId = "";
 
 const DEFAULT_COMMAND_WINDOW = 20;
 const KEEP_ALIVE_MS = 30000;
@@ -208,6 +209,7 @@ function rememberLogs(entries) {
 
 function setRoom(nextState) {
   state = nextState;
+  lastSeenAwardId = state.lastAward?.id || "";
   seenLogIds.clear();
   rememberLogs(state.log);
   noticeGeneration += 1;
@@ -235,6 +237,11 @@ function receiveState(nextState) {
   const newLogs = (nextState.log || []).filter((entry) => entry?.id && !seenLogIds.has(entry.id));
   state = nextState;
   const localUnit = state.units?.find((unit) => unit.id === myUnitId);
+  const award = state.lastAward;
+  if (award?.id && award.id !== lastSeenAwardId) {
+    lastSeenAwardId = award.id;
+    if (award.targetIds?.includes(myUnitId) && alertsEnabled) playAwardChime();
+  }
   if (localUnit?.characterId) {
     window.VectorCharacters?.syncEconomy(localUnit.characterId, localUnit.experience, localUnit.karma);
     if (localUnit.hasEngagedCombat) window.VectorCharacters?.markEngaged(localUnit.characterId);
@@ -338,7 +345,8 @@ function estimatePhase(unit) {
 }
 
 function unitStructureSignature(unit, gm, player) {
-  return [unit.id, gm, player, unit.characterName, unit.playerName, unit.color, unit.team, unit.phase, unit.currentAction?.label, unit.currentAction?.kind, unit.currentRisk, formatRate(unit.phaseRate), unit.decisionMultiplier, unit.poiseRemaining, unit.poiseMax, unit.staggerImmunity, unit.poiseLocked, unit.actionQueue?.length, state?.activeId === unit.id, state?.activeAction?.unitId === unit.id, state?.hardPaused].join("|");
+  const layer = currentDamageLayer(unit);
+  return [unit.id, gm, player, unit.characterName, unit.playerName, unit.color, unit.team, unit.phase, unit.currentAction?.label, unit.currentAction?.kind, unit.currentRisk, formatRate(unit.phaseRate), unit.decisionMultiplier, unit.poiseRemaining, unit.poiseMax, unit.staggerImmunity, unit.poiseLocked, unit.actionQueue?.length, layer.key, layer.current, state?.activeId === unit.id, state?.activeAction?.unitId === unit.id, state?.hardPaused].join("|");
 }
 
 function actionButtonsMarkup(unit) {
@@ -351,6 +359,36 @@ function compactActionLabel(unit) {
   if (state?.activeAction?.unitId === unit?.id) return state.activeAction.label;
   if (unit?.phase === "stagger") return "Action Voided";
   return unit?.currentAction?.label || "";
+}
+
+const gmDamageLayers = [
+  { key: "guard", label: "Guard", shape: "triangle" },
+  { key: "shell", label: "Shell", shape: "square" },
+  { key: "stability", label: "Stability", shape: "circle" },
+  { key: "core", label: "Core", shape: "cross" },
+];
+
+function currentDamageLayer(unit) {
+  const fallback = {
+    guard: { active: false, current: 0, max: 10 },
+    shell: { active: false, current: 0, max: 10 },
+    stability: { active: true, current: 10, max: 10 },
+    core: { active: true, current: Math.max(0, 10 - (Number(unit?.coreLost) || 0)), max: 10 },
+  };
+  const damage = unit?.damage || fallback;
+  for (const definition of gmDamageLayers) {
+    const source = damage[definition.key] || fallback[definition.key];
+    const active = definition.key === "guard" || definition.key === "shell" ? Boolean(source.active) : true;
+    const current = clamp(Math.round(Number(source.current) || 0), 0, 10);
+    if (active && current > 0) return { ...definition, active, current, max: 10 };
+  }
+  return { ...gmDamageLayers[3], active: true, current: 0, max: 10 };
+}
+
+function gmDamageMarkup(unit) {
+  const layer = currentDamageLayer(unit);
+  const points = Array.from({ length: layer.max }, (_, index) => `<span class="gm-damage-point ${layer.shape}${index < layer.current ? " filled" : ""}" aria-hidden="true"></span>`).join("");
+  return `<div class="gm-damage-strip" aria-label="${layer.label} ${layer.current} of ${layer.max}"><strong>${layer.label}</strong><div class="gm-damage-points">${points}</div><span>${layer.current}/${layer.max}</span></div>`;
 }
 
 function unitCardMarkup(unit, { gm = false, player = false } = {}) {
@@ -368,15 +406,15 @@ function unitCardMarkup(unit, { gm = false, player = false } = {}) {
       <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label player-unit-state"><strong class="unit-phase-label">${escapeHtml(phaseLabel(unit))}</strong>${compactAction ? `<span class="player-compact-action">${escapeHtml(compactAction)}</span>` : ""}</div></div>
     </article>`;
   }
-  const gmControls = gm ? `<div class="unit-actions"><label>Name<input data-action="name" data-id="${escapeHtml(unit.id)}" value="${escapeHtml(unit.characterName)}" /></label>${unit.team === "pc" ? `<label>Command<input data-action="commandWindow" data-id="${escapeHtml(unit.id)}" type="number" min="1" value="${unit.commandWindow || DEFAULT_COMMAND_WINDOW}" /></label>` : ""}<label>Color<input data-action="color" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color)}" /></label><button class="mini" data-action="nudge" data-id="${escapeHtml(unit.id)}">+5%</button><button class="mini danger" data-action="remove" data-id="${escapeHtml(unit.id)}">Remove</button></div>` : "";
+  const gmControls = gm ? `<details class="gm-unit-settings"><summary title="Edit character" aria-label="Edit ${escapeHtml(unit.characterName)}"><span aria-hidden="true">&#8230;</span></summary><div class="unit-actions"><label>Name<input data-action="name" data-id="${escapeHtml(unit.id)}" value="${escapeHtml(unit.characterName)}" /></label>${unit.team === "pc" ? `<label>Command<input data-action="commandWindow" data-id="${escapeHtml(unit.id)}" type="number" min="1" value="${unit.commandWindow || DEFAULT_COMMAND_WINDOW}" /></label>` : ""}<label>Color<input data-action="color" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color)}" /></label><button class="mini" data-action="nudge" data-id="${escapeHtml(unit.id)}">+5%</button><button class="mini danger" data-action="remove" data-id="${escapeHtml(unit.id)}">Remove</button></div></details>` : "";
   return `${cardStart}
     <div class="vector-unit-head">
       <div class="vector-unit-identity"><div class="unit-name">${escapeHtml(unit.characterName)}</div><div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - DEC ${formatRate(displayedDecisionRate(unit))} - Move ${unit.moveSpeed}</div></div>
       <div class="vector-action-line"><strong class="unit-action-name">${escapeHtml(awaitingPlayer ? "Awaiting Player" : actionLabel(unit))}</strong><span class="unit-risk">${escapeHtml(currentRiskLabel(unit))}</span></div>
       <div class="unit-readout"><strong class="unit-percent">${Math.floor(pct(unit))}%</strong><span class="unit-estimate">${escapeHtml(estimatePhase(unit))}</span></div>
-      ${gm ? `<div class="vector-card-tools"><button class="vector-icon-button damage-button" data-action="stagger" data-id="${escapeHtml(unit.id)}" title="Damage / Stagger" aria-label="Apply Stagger"><span class="target-symbol"></span></button>${poiseTool}</div>` : ""}
-      ${gmControls}
+      ${gm ? `<div class="vector-card-tools"><button class="vector-icon-button damage-button" data-action="stagger" data-id="${escapeHtml(unit.id)}" title="Damage / Stagger" aria-label="Apply Stagger"><span class="target-symbol"></span></button>${poiseTool}${gmControls}</div>` : ""}
     </div>
+    ${gm ? gmDamageMarkup(unit) : ""}
     <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label unit-phase-label">${escapeHtml(awaitingPlayer ? "AWAITING PLAYER DECISION" : phaseLabel(unit))}</div></div>
     ${gm && !awaitingPlayer ? actionButtonsMarkup(unit) : ""}
   </article>`;
@@ -587,6 +625,7 @@ async function syncPlayerCharacter(characterId) {
     stats: payload.stats,
     experience: payload.experience,
     poiseMax: payload.poiseMax,
+    damage: payload.damage,
     coreLost: payload.coreLost,
   });
 }
@@ -609,6 +648,7 @@ async function openPlayerCharacterSheet() {
       stats: payload.stats,
       experience: payload.experience,
       poiseMax: payload.poiseMax,
+    damage: payload.damage,
       coreLost: payload.coreLost,
     });
     unit = next?.units?.find((entry) => entry.id === unit.id) || unit;
@@ -622,15 +662,18 @@ async function openPlayerCharacterSheet() {
 function renderAwardTargets() {
   if (!elements.awardTarget || !state) return;
   const pcs = state.units.filter((unit) => unit.team === "pc");
-  elements.openAwardDialog.disabled = pcs.length === 0;
+  elements.openAwardDialog.disabled = false;
   const previous = elements.awardTarget.value;
-  elements.awardTarget.innerHTML = `<option value="__all__">All PCs</option>${pcs.map((unit) => `<option value="${escapeHtml(unit.id)}">${escapeHtml(unit.characterName)} - ${Number(unit.experience?.available) || 0} EXP / ${Number(unit.karma) || 0} Karma</option>`).join("")}`;
+  elements.awardTarget.innerHTML = pcs.length
+    ? `<option value="__all__">All PCs</option>${pcs.map((unit) => `<option value="${escapeHtml(unit.id)}">${escapeHtml(unit.characterName)} - ${Number(unit.experience?.available) || 0} EXP / ${Number(unit.karma) || 0} Karma</option>`).join("")}`
+    : `<option value="">No PCs in encounter</option>`;
+  elements.confirmAward.disabled = pcs.length === 0;
   if (pcs.some((unit) => unit.id === previous)) elements.awardTarget.value = previous;
 }
 
 function openAwardPanel() {
   renderAwardTargets();
-  if (!state?.units.some((unit) => unit.team === "pc")) return;
+
   elements.awardAmount.value = "1";
   elements.awardDialog.classList.remove("hidden");
   elements.awardAmount.focus();
@@ -770,7 +813,9 @@ function closePlayerLogDrawer() { elements.playerLogDrawer.classList.add("hidden
 function ensureAudio() { const Context = window.AudioContext || window.webkitAudioContext; if (!audioContext) audioContext = new Context(); if (audioContext.state === "suspended") audioContext.resume(); return audioContext; }
 function tone(frequency, duration, gainValue = 0.04, type = "square") { const audio = ensureAudio(); const osc = audio.createOscillator(); const gain = audio.createGain(); osc.type = type; osc.frequency.value = frequency; gain.gain.setValueAtTime(gainValue, audio.currentTime); gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + duration); osc.connect(gain); gain.connect(audio.destination); osc.start(); osc.stop(audio.currentTime + duration + 0.02); }
 function playCombatStartSting() { combatStartAudio.pause(); combatStartAudio.currentTime = 0; combatStartAudio.volume = 0.9; combatStartAudio.play().catch(() => {}); }
-function playGmSound(name) { if (gmSoundsMuted) return; try { tone(name === "danger" ? 280 : name === "resolve" ? 760 : 680, 0.07, 0.025, "square"); } catch { /* Audio permission is optional. */ } }
+function playAwardChime() { try { tone(660, 0.18, 0.08, "sine"); setTimeout(() => tone(880, 0.2, 0.07, "sine"), 90); setTimeout(() => tone(1100, 0.24, 0.06, "sine"), 190); } catch { /* The visual award remains. */ } }
+function playExperienceSpentTone() { try { tone(720, 0.09, 0.025, "sine"); setTimeout(() => tone(900, 0.1, 0.02, "sine"), 55); } catch { /* The EXP display still updates. */ } }
+function playGmSound(name) { if (gmSoundsMuted) return; if (name === "award") return playAwardChime(); try { tone(name === "danger" ? 280 : name === "resolve" ? 760 : 680, 0.07, 0.025, "square"); } catch { /* Audio permission is optional. */ } }
 function playTurnDing() { try { tone(880, 0.22, 0.24, "sine"); setTimeout(() => tone(1320, 0.25, 0.2, "sine"), 120); } catch { /* Visual alert remains. */ } }
 function playInterruptedBuzz() { try { tone(180, 0.35, 0.35, "sawtooth"); } catch { /* Log remains. */ } }
 
@@ -809,6 +854,7 @@ elements.createRoom.addEventListener("click", async () => {
 elements.showJoinRoom.addEventListener("click", () => setMode("roomJoin"));
 elements.showCharacterCreation.addEventListener("click", () => { characterReturnMode = "welcome"; window.VectorCharacters?.openNew(); setMode("character"); });
 window.addEventListener("vector-character-close", () => setMode(characterReturnMode));
+window.addEventListener("vector-exp-spent", playExperienceSpentTone);
 window.addEventListener("vector-characters-changed", (event) => {
   refreshJoinCharacterOptions();
   if (event.detail?.reason !== "combat-history") syncPlayerCharacter(event.detail?.id);
@@ -836,7 +882,7 @@ elements.joinPlayer.addEventListener("click", async () => {
     team: "pc",
     commandWindow: DEFAULT_COMMAND_WINDOW,
     ...entry,
-    ...(saved ? { characterId: saved.characterId, experience: saved.experience, karma: saved.karma, poiseMax: saved.poiseMax, coreLost: saved.coreLost, hasEngagedCombat: saved.hasEngagedCombat } : {}),
+    ...(saved ? { characterId: saved.characterId, experience: saved.experience, karma: saved.karma, poiseMax: saved.poiseMax, damage: saved.damage, coreLost: saved.coreLost, hasEngagedCombat: saved.hasEngagedCombat } : {}),
   });
   if (!next) return;
   const unit = saved ? [...next.units].reverse().find((candidate) => candidate.characterId === saved.characterId) : next.units.at(-1);
@@ -909,7 +955,8 @@ elements.confirmAward.addEventListener("click", async () => {
   const targetId = elements.awardTarget.value;
   const resource = elements.awardResource.value;
   closeAwardPanel();
-  await action({ action: "awardResource", targetId, resource, amount }, "resolve");
+  if (!targetId) return;
+  await action({ action: "awardResource", targetId, resource, amount }, "award");
 });
 elements.awardDialog.addEventListener("keydown", (event) => { if (event.key === "Escape") closeAwardPanel(); });
 

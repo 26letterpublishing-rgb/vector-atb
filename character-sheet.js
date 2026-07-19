@@ -124,7 +124,7 @@
       skills: baseSkills(),
       experience: { available: STARTING_EXP, totalEarned: STARTING_EXP, totalSpent: 0 },
       karma: 0,
-      poise: { current: 3, max: 3 },
+      poise: { current: 0, max: 0 },
       damage: {
         guard: { active: false, current: 0, max: 10 },
         shell: { active: false, current: 0, max: 10 },
@@ -166,7 +166,8 @@
       totalSpent: spent,
     };
     clean.karma = whole(source.karma, 0, 0);
-    clean.poise = { current: whole(source.poise?.current, 3, 0, 99), max: whole(source.poise?.max, 3, 1, 99) };
+    const composure = whole(clean.skills.composure, 0, 0, 99);
+    clean.poise = { current: composure, max: composure };
     for (const layer of damageLayers) {
       const active = layer.key === "guard" || layer.key === "shell" ? Boolean(source.damage?.[layer.key]?.active) : true;
       clean.damage[layer.key] = {
@@ -347,6 +348,7 @@
   }
 
   function renderVitals() {
+    const composure = whole(draft.skills.composure, 0, 0, 99);
     const threshold = draft.attributes.health + draft.skills.resilience;
     elements.characterMoveSpeed.textContent = String(moveSpeed(draft.attributes.dexterity));
     elements.characterMoveFormula.textContent = `DEX ${draft.attributes.dexterity} -> ${moveSpeed(draft.attributes.dexterity)} spaces`;
@@ -354,7 +356,7 @@
     elements.characterStabilityFormula.textContent = `HTH ${draft.attributes.health} + Resilience ${draft.skills.resilience}`;
     elements.characterCoreThreshold.textContent = String(threshold);
     elements.characterCoreFormula.textContent = `HTH ${draft.attributes.health} + Resilience ${draft.skills.resilience}`;
-    elements.characterPoise.textContent = `${draft.poise.current} / ${draft.poise.max}`;
+    elements.characterPoise.textContent = `${composure} / ${composure}`;
     elements.characterDamageTracks.innerHTML = damageLayers.map((definition) => {
       const layer = { ...definition, ...draft.damage[definition.key] };
       const inactive = !layer.active;
@@ -425,6 +427,7 @@
     sessionUndo.push(record);
     draft.experience.available -= cost;
     draft.experience.totalSpent += cost;
+    window.dispatchEvent(new CustomEvent("vector-exp-spent", { detail: { cost } }));
   }
 
   function buyAttribute(key) {
@@ -589,7 +592,8 @@
       characterId: character.id,
       experience: clone(character.experience),
       karma: character.karma,
-      poiseMax: character.poise.max,
+      poiseMax: character.skills.composure,
+      damage: clone(character.damage),
       coreLost: 10 - character.damage.core.current,
       hasEngagedCombat: character.hasEngagedCombat,
       stats: {
@@ -640,11 +644,13 @@
       if (unit?.stats?.[attribute.key] !== undefined) character.attributes[attribute.key] = whole(unit.stats[attribute.key], 2, 2, 20);
     }
     for (const skill of skills) {
-      if (unit?.stats?.[skill.key] !== undefined) character.skills[skill.key] = whole(unit.stats[skill.key], 0, 0, 999);
+      const value = unit?.skills?.[skill.key] ?? unit?.stats?.[skill.key];
+      if (value !== undefined) character.skills[skill.key] = whole(value, 0, 0, 999);
     }
     character.karma = whole(unit?.karma, 0, 0);
-    character.poise = { current: whole(unit?.poiseRemaining, 3, 0, 99), max: whole(unit?.poiseMax, 3, 1, 99) };
-    character.damage.core.current = 10 - whole(unit?.coreLost, 0, 0, 10);
+    character.poise = { current: character.skills.composure, max: character.skills.composure };
+    if (unit?.damage) character.damage = clone(unit.damage);
+    else character.damage.core.current = 10 - whole(unit?.coreLost, 0, 0, 10);
     character.hasEngagedCombat = Boolean(unit?.hasEngagedCombat);
     character.finalized = true;
     character.savedBuild = buildCheckpoint(character);
