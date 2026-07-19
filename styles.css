@@ -4865,6 +4865,87 @@ body.poise-modal-open {
 
 .player-action-choice span { font-size: 1.02rem; }
 
+.player-mode .player-compact-card {
+  padding: 8px 9px 9px;
+  border-color: rgba(var(--bar-rgb), 0.68);
+  background:
+    linear-gradient(90deg, rgba(var(--bar-rgb), 0.12), transparent 42%),
+    rgba(8, 16, 14, 0.96);
+  box-shadow:
+    0 0 0 1px rgba(var(--bar-rgb), 0.12),
+    0 0 16px rgba(var(--bar-rgb), 0.24);
+}
+
+.player-mode .player-compact-card.ready,
+.player-mode .player-compact-card.resolving {
+  border-color: var(--bar-color);
+  box-shadow:
+    0 0 0 1px rgba(var(--bar-rgb), 0.26),
+    0 0 24px rgba(var(--bar-rgb), 0.4);
+}
+
+.player-compact-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-compact-identity strong {
+  min-width: 0;
+  overflow: hidden;
+  color: #f7fbf9;
+  font-size: 0.9rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-color-swatch {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.74);
+  border-radius: 2px;
+  background: var(--bar-color);
+  box-shadow: 0 0 9px rgba(var(--bar-rgb), 0.72);
+}
+
+.player-you-marker {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--bar-color);
+  font-size: 0.58rem;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.player-mode .player-compact-card .vector-phase-meter {
+  height: 25px;
+  margin-top: 7px;
+}
+
+.player-unit-state {
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 8px;
+}
+
+.player-unit-state strong,
+.player-unit-state span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-unit-state strong { flex: 0 1 auto; }
+.player-unit-state span {
+  flex: 1 1 auto;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 0.65rem;
+  text-align: right;
+}
+
 @media (max-width: 820px) {
   .stat-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .weapon-entry-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -4889,4 +4970,9 @@ body.poise-modal-open {
   .queue-action-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .improvised-fields { grid-template-columns: 1fr; }
   .improvised-fields label:first-child { grid-column: auto; }
+  .player-mode .unit-list { gap: 7px; }
+  .player-mode .player-compact-card { padding: 7px 8px 8px; }
+  .player-compact-identity strong { font-size: 0.86rem; }
+  .player-unit-state { gap: 7px; padding: 0 6px; }
+  .player-unit-state span { font-size: 0.6rem; }
 }

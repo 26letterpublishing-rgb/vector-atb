@@ -69,6 +69,12 @@ function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
 }
 
+function characterColorStyle(value) {
+  const color = /^#[0-9a-f]{6}$/i.test(String(value || "")) ? String(value) : "#39e58f";
+  const channels = [1, 3, 5].map((index) => Number.parseInt(color.slice(index, index + 2), 16));
+  return `--bar-color:${color};--bar-rgb:${channels.join(",")}`;
+}
+
 function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
 function numberValue(id, fallback = 0) { const value = Number($(`#${id}`)?.value); return Number.isFinite(value) ? value : fallback; }
 function mark(value) { const count = clamp(Math.round(Number(value) || 0), 0, 3); return count ? "+".repeat(count) : "0"; }
@@ -210,12 +216,19 @@ function estimatePhase(unit) {
 }
 
 function unitStructureSignature(unit, gm, player) {
-  return [unit.id, gm, player, unit.characterName, unit.playerName, unit.team, unit.phase, unit.currentAction?.label, unit.currentAction?.kind, unit.currentRisk, formatRate(unit.phaseRate), unit.poiseRemaining, unit.poiseMax, unit.staggerImmunity, unit.poiseLocked, unit.actionQueue?.length, state?.activeId === unit.id, state?.activeAction?.unitId === unit.id, state?.hardPaused].join("|");
+  return [unit.id, gm, player, unit.characterName, unit.playerName, unit.color, unit.team, unit.phase, unit.currentAction?.label, unit.currentAction?.kind, unit.currentRisk, formatRate(unit.phaseRate), unit.poiseRemaining, unit.poiseMax, unit.staggerImmunity, unit.poiseLocked, unit.actionQueue?.length, state?.activeId === unit.id, state?.activeAction?.unitId === unit.id, state?.hardPaused].join("|");
 }
 
 function actionButtonsMarkup(unit) {
   if (state?.activeId !== unit.id || state?.activeAction) return "";
   return `<div class="vector-action-grid" data-action-unit="${escapeHtml(unit.id)}">${actions().map((entry) => `<button type="button" class="vector-action-button action-${escapeHtml(entry.id)}" data-action-id="${escapeHtml(entry.id)}"><strong>${escapeHtml(entry.label)}</strong></button>`).join("")}</div>`;
+}
+
+function compactActionLabel(unit) {
+  if (state?.activeId === unit?.id) return "Choose Action";
+  if (state?.activeAction?.unitId === unit?.id) return state.activeAction.label;
+  if (unit?.phase === "stagger") return "Action Voided";
+  return unit?.currentAction?.label || "";
 }
 
 function unitCardMarkup(unit, { gm = false, player = false } = {}) {
@@ -225,7 +238,15 @@ function unitCardMarkup(unit, { gm = false, player = false } = {}) {
   const awaitingPlayer = gm && active && unit.controlledBy === "player";
   const side = unit.team === "pc" ? "PC" : "NPC";
   const poiseTool = gm && unit.poiseMax > 0 ? `<button class="vector-icon-button npc-poise-button" data-action="poise" data-id="${escapeHtml(unit.id)}" title="Poise ${unit.poiseRemaining}/${unit.poiseMax}" aria-label="Poise for ${escapeHtml(unit.characterName)}"><span>${unit.poiseRemaining}</span></button>` : "";
-  return `<article class="unit-card vector-unit-card phase-${escapeHtml(unit.phase)} ${active ? "ready" : ""} ${resolving ? "resolving" : ""} ${own ? "own-unit" : ""}" data-unit-id="${escapeHtml(unit.id)}" data-signature="${escapeHtml(unitStructureSignature(unit, gm, player))}" style="--bar:${escapeHtml(unit.color || "#39e58f")}">
+  const cardStart = `<article class="unit-card vector-unit-card ${player ? "player-compact-card" : ""} phase-${escapeHtml(unit.phase)} ${active ? "ready" : ""} ${resolving ? "resolving" : ""} ${own ? "own-unit" : ""}" data-unit-id="${escapeHtml(unit.id)}" data-signature="${escapeHtml(unitStructureSignature(unit, gm, player))}" style="${characterColorStyle(unit.color)}">`;
+  if (player) {
+    const compactAction = compactActionLabel(unit);
+    return `${cardStart}
+      <div class="player-compact-identity"><span class="player-color-swatch" aria-hidden="true"></span><strong>${escapeHtml(unit.characterName)}</strong>${own ? `<span class="player-you-marker">You</span>` : ""}</div>
+      <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label player-unit-state"><strong>${escapeHtml(phaseLabel(unit))}</strong>${compactAction ? `<span class="player-compact-action">${escapeHtml(compactAction)}</span>` : ""}</div></div>
+    </article>`;
+  }
+  return `${cardStart}
     <div class="vector-unit-head">
       <div><div class="unit-name">${escapeHtml(unit.characterName)}</div><div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - DEC ${formatRate(unit.stats.intellect + unit.stats.initiative)} - Move ${unit.moveSpeed}</div></div>
       <div class="unit-readout"><strong class="unit-percent">${Math.floor(pct(unit))}%</strong><span class="unit-estimate">${escapeHtml(estimatePhase(unit))}</span></div>
@@ -233,7 +254,6 @@ function unitCardMarkup(unit, { gm = false, player = false } = {}) {
     </div>
     <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label">${escapeHtml(awaitingPlayer ? "AWAITING PLAYER DECISION" : phaseLabel(unit))}</div></div>
     <div class="vector-action-line"><strong class="unit-action-name">${escapeHtml(awaitingPlayer ? "Awaiting Player" : actionLabel(unit))}</strong><span class="unit-risk">${escapeHtml(currentRiskLabel(unit))}</span></div>
-    ${player && own ? `<label class="player-color-inline"><span>Color</span><input data-action="playerColor" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color)}" /></label>` : ""}
     ${gm ? `<div class="unit-actions"><label>Name<input data-action="name" data-id="${escapeHtml(unit.id)}" value="${escapeHtml(unit.characterName)}" /></label>${unit.team === "pc" ? `<label>Command<input data-action="commandWindow" data-id="${escapeHtml(unit.id)}" type="number" min="1" value="${unit.commandWindow || DEFAULT_COMMAND_WINDOW}" /></label>` : ""}<label>Color<input data-action="color" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color)}" /></label><button class="mini" data-action="nudge" data-id="${escapeHtml(unit.id)}">+5%</button><button class="mini danger" data-action="remove" data-id="${escapeHtml(unit.id)}">Remove</button></div>` : ""}
     ${gm && !awaitingPlayer ? actionButtonsMarkup(unit) : ""}
   </article>`;
@@ -244,6 +264,7 @@ function updateUnitCard(card, unit) {
   const percent = card.querySelector(".unit-percent"); if (percent) percent.textContent = `${Math.floor(pct(unit))}%`;
   const estimate = card.querySelector(".unit-estimate"); if (estimate) estimate.textContent = estimatePhase(unit);
   const actionName = card.querySelector(".unit-action-name"); if (actionName) actionName.textContent = actionLabel(unit);
+  const compactAction = card.querySelector(".player-compact-action"); if (compactAction) compactAction.textContent = compactActionLabel(unit);
   const risk = card.querySelector(".unit-risk"); if (risk) risk.textContent = currentRiskLabel(unit);
 }
 
@@ -425,8 +446,7 @@ function render() {
   elements.clockState.textContent = state.hardPaused ? "Paused" : state.pausedForStagger ? "Stagger" : state.pausedForResolution ? "Resolution" : state.pausedForTurn ? "Decision" : state.running ? "Engaged" : "Waiting";
   elements.gmPanicPause.innerHTML = state.hardPaused || (!state.running && !state.pausedForTurn && !state.pausedForResolution && !state.pausedForStagger) ? "<span>Engage Clock</span>" : "<span>Pause Everything</span>";
   const mine = myUnit();
-  const visibleUnits = mode === "player" && mine ? [mine] : state.units;
-  renderUnitList(visibleUnits);
+  renderUnitList(state.units);
   renderActivePanel();
   renderPlayerCommand(mine);
   renderPoiseControls(mine);

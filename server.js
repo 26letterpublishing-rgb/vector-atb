@@ -11,7 +11,7 @@ const THRESHOLD = 100;
 const DEFAULT_COMMAND_WINDOW = 20;
 const DUMBFOUNDED_RATE = 20;
 const EXPIRED_COMMAND_MULTIPLIER = 0.2;
-const MOVE_EDGE_RATE = 75;
+const MOVE_EDGE_RATE = 500;
 
 const rooms = new Map();
 const clients = new Map();
@@ -184,9 +184,9 @@ function buildAction(room, unit, request, { queued = false } = {}) {
     action.movement = { distance, speed, duration };
   } else if (template.kind === "item") {
     action.rates = {
-      preparation: positiveRate(stats.perception + stats.initiative + 35),
+      preparation: positiveRate((stats.perception + stats.initiative) * 10 + 300),
       execution: positiveRate(stats.dexterity + stats.initiative + 5),
-      recovery: positiveRate(stats.dexterity + stats.initiative + 35),
+      recovery: positiveRate((stats.dexterity + stats.initiative) * 10 + 300),
     };
   } else {
     const skill = number(stats[template.skill]);
