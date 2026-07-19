@@ -419,7 +419,9 @@ function renderPoiseControls(mine) {
 function renderQueue(mine) {
   const show = mode === "player" && Boolean(mine);
   elements.playerQueueButton.classList.toggle("hidden", !show);
+  elements.playerQueueButton.disabled = !state?.queueAvailable;
   if (mine) elements.playerQueueCount.textContent = `${mine.actionQueue.length}/2`;
+  if (!state?.queueAvailable && !elements.queueDialog.classList.contains("hidden")) closeQueueDialog();
   if (elements.queueDialog.classList.contains("hidden") || !mine) return;
   elements.queuedActionList.innerHTML = mine.actionQueue.length ? mine.actionQueue.map((entry, index) => `<article><div><strong>${escapeHtml(actionById(entry.actionId).label)}</strong><span>${entry.targetId ? escapeHtml(state.units.find((unit) => unit.id === entry.targetId)?.characterName || "Invalid target") : entry.distance ? `${formatRate(entry.distance)} units` : "Configured"}</span></div><button type="button" data-remove-queue="${index}" aria-label="Remove queued action">&times;</button></article>`).join("") : `<p class="queue-empty">No actions queued.</p>`;
   elements.queueActionChoices.innerHTML = mine.actionQueue.length >= 2 ? "" : playerVisibleActions().map((entry) => `<button type="button" data-queue-action="${entry.id}">${escapeHtml(entry.label)}</button>`).join("");
@@ -474,6 +476,7 @@ function render() {
   elements.activePanel.classList.toggle("hidden", !state || mode !== "gm");
   elements.gmPanicPause.classList.toggle("hidden", mode !== "gm" || !state);
   if (!state) return;
+  if (actionConfigContext?.commandSlowed && state.activeId !== actionConfigContext.unitId) closeActionConfig({ restoreCommand: false });
   const previousRejoinId = elements.rejoinSelect.value || myUnitId;
   const rejoinable = mode === "join" ? state.units.filter((unit) => unit.controlledBy === "player") : [];
   elements.rejoinBlock.classList.toggle("hidden", rejoinable.length === 0);
@@ -507,7 +510,8 @@ function openActionConfig(unitId, actionId, { queue = false } = {}) {
   if (!unit || !template) return;
   const needsConfig = template.kind === "move" || template.targetMode !== "none" || (template.id === "improvised" && mode === "gm");
   if (!needsConfig) return submitConfiguredAction({ unitId, actionId, queue });
-  actionConfigContext = { unitId, actionId, queue };
+  const commandSlowed = mode === "player" && !queue && state?.activeId === unitId && Boolean(commandFor(unit));
+  actionConfigContext = { unitId, actionId, queue, commandSlowed };
   elements.actionConfigEyebrow.textContent = queue ? "Queue Action" : template.id === "improvised" ? "GM Special Action" : "Configure Action";
   elements.actionConfigTitle.textContent = template.label;
   elements.actionDistanceWrap.classList.toggle("hidden", template.kind !== "move");
@@ -520,9 +524,16 @@ function openActionConfig(unitId, actionId, { queue = false } = {}) {
     elements.actionOtherTarget.innerHTML = state.units.filter((entry) => entry.id !== unit.id).map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.characterName)} (${entry.team.toUpperCase()})</option>`).join("");
   }
   elements.actionConfigDialog.classList.remove("hidden");
+  if (commandSlowed) action({ action: "setCommandSpeed", id: unitId, speed: 0.5 });
 }
 
-function closeActionConfig() { actionConfigContext = null; elements.actionConfigDialog.classList.add("hidden"); elements.actionOtherTargetWrap.classList.add("hidden"); }
+function closeActionConfig({ restoreCommand = true } = {}) {
+  const context = actionConfigContext;
+  actionConfigContext = null;
+  elements.actionConfigDialog.classList.add("hidden");
+  elements.actionOtherTargetWrap.classList.add("hidden");
+  if (restoreCommand && context?.commandSlowed) action({ action: "setCommandSpeed", id: context.unitId, speed: 1 });
+}
 
 async function submitConfiguredAction({ unitId, actionId, queue = false, targetId = null, distance = null, customAction = null }) {
   const payload = { action: queue ? "queueAction" : "chooseAction", id: unitId, actionId, targetId, distance, customAction };
@@ -532,10 +543,11 @@ async function submitConfiguredAction({ unitId, actionId, queue = false, targetI
     elements.playerFocusActions.setAttribute("aria-busy", "true");
     elements.playerFocusPrompt.textContent = "Locking action";
   }
-  await action(payload, "start");
+  const next = await action(payload, "start");
   playerActionRequestPending = false;
   elements.playerFocusActions.removeAttribute("aria-busy");
   if (queue) openQueueDialog();
+  else if (!next && mode === "player") action({ action: "setCommandSpeed", id: unitId, speed: 1 });
 }
 
 function confirmConfiguredAction() {
@@ -544,14 +556,14 @@ function confirmConfiguredAction() {
   const template = actionById(context.actionId);
   let targetId = null;
   if (template.targetMode !== "none") targetId = elements.actionTarget.value === "__other__" ? elements.actionOtherTarget.value : elements.actionTarget.value || null;
-  const distance = template.kind === "move" ? Math.max(0.01, numberValue("actionDistance", 1)) : null;
+  const distance = template.kind === "move" ? Math.max(1, Math.round(numberValue("actionDistance", 1))) : null;
   const customAction = template.id === "improvised" && mode === "gm" ? {
     label: elements.improvisedName.value,
     [`preparation${improvisedInputMode === "time" ? "Time" : "Rate"}`]: numberValue("improvisedPreparation", improvisedInputMode === "time" ? 10 : 10), preparationRisk: numberValue("improvisedPreparationRisk", 1),
     [`execution${improvisedInputMode === "time" ? "Time" : "Rate"}`]: numberValue("improvisedExecution", improvisedInputMode === "time" ? 5 : 20), executionRisk: numberValue("improvisedExecutionRisk", 3),
     [`recovery${improvisedInputMode === "time" ? "Time" : "Rate"}`]: numberValue("improvisedRecovery", improvisedInputMode === "time" ? 6.6667 : 15), recoveryRisk: numberValue("improvisedRecoveryRisk", 2), hasResolution: true,
   } : null;
-  closeActionConfig();
+  closeActionConfig({ restoreCommand: false });
   submitConfiguredAction({ ...context, targetId, distance, customAction });
 }
 
@@ -559,7 +571,7 @@ function openPoiseDialog(unitId) { poiseTargetId = unitId; elements.poiseDialog.
 function closePoiseDialog() { poiseTargetId = ""; elements.poiseDialog.classList.add("hidden"); document.body.classList.remove("poise-modal-open"); }
 function openStaggerDialog(unitId) { const unit = state?.units.find((entry) => entry.id === unitId); if (!unit) return; staggerTargetId = unitId; elements.staggerDialogTarget.textContent = unit.characterName; elements.staggerDuration.value = "5"; elements.staggerDialog.classList.remove("hidden"); elements.staggerDuration.focus(); }
 function closeStaggerDialog() { staggerTargetId = ""; elements.staggerDialog.classList.add("hidden"); }
-function openQueueDialog() { elements.queueDialog.classList.remove("hidden"); renderQueue(myUnit()); }
+function openQueueDialog() { if (!state?.queueAvailable) return; elements.queueDialog.classList.remove("hidden"); renderQueue(myUnit()); }
 function closeQueueDialog() { elements.queueDialog.classList.add("hidden"); }
 function openPlayerLog() { elements.playerLogDrawer.classList.remove("hidden"); document.body.classList.add("player-log-open"); }
 function closePlayerLogDrawer() { elements.playerLogDrawer.classList.add("hidden"); document.body.classList.remove("player-log-open"); }

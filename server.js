@@ -139,7 +139,7 @@ function actionRequestFromBody(body = {}) {
   return {
     actionId: String(body.actionId || "improvised"),
     targetId: body.targetId ? String(body.targetId) : null,
-    distance: body.distance === undefined ? null : positiveRate(body.distance, 1),
+    distance: body.distance === undefined ? null : whole(body.distance, 1, 1, 999999),
     customAction: body.customAction ? clone(body.customAction) : null,
   };
 }
@@ -189,7 +189,7 @@ function buildAction(room, unit, request, { queued = false } = {}) {
     };
     action.hasResolution = custom.hasResolution !== false;
   } else if (template.kind === "move") {
-    const distance = positiveRate(request.distance, 1);
+    const distance = whole(request.distance, 1, 1, 999999);
     const speed = Math.max(1, moveSpeed(stats.dexterity));
     const duration = (3 * distance) / speed;
     action.rates = { preparation: MOVE_EDGE_RATE, execution: THRESHOLD / duration, recovery: MOVE_EDGE_RATE };
@@ -202,14 +202,14 @@ function buildAction(room, unit, request, { queued = false } = {}) {
     };
   } else {
     const skill = number(stats[template.skill]);
+    const preparationMultiplier = unit.lastExecutedActionId === template.id ? 20 : 10;
     action.rates = {
-      preparation: positiveRate(stats.perception + skill + weapon.preparation),
+      preparation: positiveRate((stats.perception + skill + weapon.preparation) * preparationMultiplier),
       execution: positiveRate(stats.dexterity + skill + weapon.execution),
       recovery: recoveryRate(stats.dexterity, skill, weapon.recovery),
     };
+    action.preparationMultiplier = preparationMultiplier;
   }
-
-  if (queued) action.rates.preparation += 1;
 
   if (isAttack(action)) {
     const pending = unit.pendingAttackPoise || {};
@@ -277,6 +277,7 @@ function createRoom() {
     pendingStagger: null,
     commandDeadline: null,
     commandTotal: 0,
+    commandSpeed: 1,
     commandExpired: false,
     lastInterruptedId: null,
     lastInterruptedAt: 0,
@@ -300,8 +301,23 @@ function getRoom(code) {
 
 function commandState(room) {
   if (!room.activeId || !room.commandTotal) return null;
-  const remaining = room.commandExpired || !room.commandDeadline ? 0 : Math.max(0, (room.commandDeadline - Date.now()) / 1000);
-  return { unitId: room.activeId, total: room.commandTotal, remaining, expired: room.commandExpired };
+  const speed = positiveRate(room.commandSpeed, 1);
+  const remaining = room.commandExpired || !room.commandDeadline ? 0 : Math.max(0, ((room.commandDeadline - Date.now()) / 1000) * speed);
+  return { unitId: room.activeId, total: room.commandTotal, remaining, speed, expired: room.commandExpired };
+}
+
+function setCommandSpeed(room, nextSpeed) {
+  if (!room.activeId || !room.commandDeadline || room.commandExpired) return false;
+  const oldSpeed = positiveRate(room.commandSpeed, 1);
+  const remaining = Math.max(0, ((room.commandDeadline - Date.now()) / 1000) * oldSpeed);
+  const speed = clamp(positiveRate(nextSpeed, 1), 0.1, 1);
+  room.commandSpeed = speed;
+  room.commandDeadline = Date.now() + (remaining / speed) * 1000;
+  return true;
+}
+
+function queueIsAvailable(room) {
+  return !room.running || room.hardPaused || room.pausedForTurn || room.pausedForResolution || room.pausedForStagger;
 }
 
 function publicState(room) {
@@ -317,6 +333,7 @@ function publicState(room) {
     pendingStagger: clone(room.pendingStagger),
     command: commandState(room),
     commandExpired: room.commandExpired,
+    queueAvailable: queueIsAvailable(room),
     hardPaused: room.hardPaused,
     hasEngagedClock: room.hasEngagedClock,
     lastInterruptedId: room.lastInterruptedId,
@@ -353,8 +370,9 @@ function snapshotRoom(room) {
     activeId: room.activeId,
     activeAction: clone(room.activeAction),
     pendingStagger: clone(room.pendingStagger),
-    commandRemaining: room.commandDeadline ? Math.max(0, (room.commandDeadline - Date.now()) / 1000) : null,
+    commandRemaining: room.commandDeadline ? commandState(room)?.remaining ?? null : null,
     commandTotal: room.commandTotal,
+    commandSpeed: room.commandSpeed,
     commandExpired: room.commandExpired,
     lastInterruptedId: room.lastInterruptedId,
     lastInterruptedAt: room.lastInterruptedAt,
@@ -372,7 +390,8 @@ function restoreUndoSnapshot(room) {
   if (!room.undoSnapshot) return false;
   const snap = room.undoSnapshot;
   Object.assign(room, clone(snap));
-  room.commandDeadline = snap.commandRemaining === null ? null : Date.now() + snap.commandRemaining * 1000;
+  room.commandSpeed = positiveRate(snap.commandSpeed, 1);
+  room.commandDeadline = snap.commandRemaining === null ? null : Date.now() + (snap.commandRemaining / room.commandSpeed) * 1000;
   room.undoSnapshot = null;
   room.lastTick = Date.now();
   pushLog(room, "Undid last timing change.");
@@ -398,6 +417,7 @@ function canStartClock(room) {
 function clearCommand(room) {
   room.commandDeadline = null;
   room.commandTotal = 0;
+  room.commandSpeed = 1;
   room.commandExpired = false;
 }
 
@@ -418,6 +438,7 @@ function clearPoiseBuffs(unit) {
 }
 
 function completeExecutionPoise(room, unit) {
+  unit.lastExecutedActionId = unit.currentAction?.id || null;
   unit.cleanExecutionCount = whole(unit.cleanExecutionCount) + 1;
   unit.totalExecutionCount = whole(unit.totalExecutionCount) + 1;
   let restored = 0;
@@ -482,6 +503,7 @@ function pauseForDecision(room, unit) {
   room.commandExpired = false;
   if (unit.team === "pc" && unit.commandWindow) {
     room.commandTotal = unit.commandWindow;
+    room.commandSpeed = 1;
     room.commandDeadline = Date.now() + unit.commandWindow * 1000;
     pushLog(room, `${unit.characterName} is ready. Command Window started (${unit.commandWindow} sec).`);
   } else {
@@ -864,6 +886,7 @@ function createUnit(body) {
     phaseProgress: 0,
     currentAction: null,
     actionQueue: [],
+    lastExecutedActionId: null,
     decisionBoost: false,
     commandExpired: false,
     staggerRate: null,
@@ -937,17 +960,20 @@ async function handleAction(req, res) {
       chooseActionInternal(room, unit, actionRequestFromBody(body));
       moveToNextOrClock(room);
     }
+  } else if (action === "setCommandSpeed") {
+    const unit = room.units.find((entry) => entry.id === body.id);
+    if (unit && room.pausedForTurn && room.activeId === unit.id) setCommandSpeed(room, body.speed);
   } else if (action === "queueAction") {
     const unit = room.units.find((entry) => entry.id === body.id);
     const request = actionRequestFromBody(body);
-    if (unit && unit.controlledBy === "player" && unit.actionQueue.length < 2 && requestIsValid(room, request)) {
+    if (unit && queueIsAvailable(room) && unit.controlledBy === "player" && unit.actionQueue.length < 2 && requestIsValid(room, request)) {
       unit.actionQueue.push(request);
       pushLog(room, `${unit.characterName} queued ${ACTIONS[request.actionId].label}.`);
     }
   } else if (action === "removeQueuedAction") {
     const unit = room.units.find((entry) => entry.id === body.id);
     const index = whole(body.index, -1, -1, 1);
-    if (unit && index >= 0 && index < unit.actionQueue.length) unit.actionQueue.splice(index, 1);
+    if (unit && queueIsAvailable(room) && index >= 0 && index < unit.actionQueue.length) unit.actionQueue.splice(index, 1);
   } else if (action === "completeResolution") {
     if (room.activeAction) {
       const unit = room.units.find((entry) => entry.id === room.activeAction.unitId);
@@ -967,7 +993,7 @@ async function handleAction(req, res) {
     }
   } else if (action === "reset") {
     for (const unit of room.units) {
-      unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.decisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.poiseMax = unit.stats.composure; unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
+      unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.lastExecutedActionId = null; unit.decisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.poiseMax = unit.stats.composure; unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
     }
     room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.lastInterruptedId = null; room.lastInterruptedAt = 0; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter reset.");
   } else if (action === "clearEncounter") {

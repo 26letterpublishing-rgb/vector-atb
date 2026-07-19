@@ -423,7 +423,7 @@
         <h2 id="actionConfigTitle">Action</h2>
         <label id="actionTargetWrap" class="vector-modal-field hidden">Target<select id="actionTarget"></select></label>
         <label id="actionOtherTargetWrap" class="vector-modal-field hidden">Other Character<select id="actionOtherTarget"></select></label>
-        <label id="actionDistanceWrap" class="vector-modal-field hidden">Distance<input id="actionDistance" type="number" min="0.01" step="0.01" value="1" inputmode="decimal" /></label>
+        <label id="actionDistanceWrap" class="vector-modal-field hidden">Distance<input id="actionDistance" type="number" min="1" step="1" value="1" inputmode="numeric" /></label>
         <div id="improvisedFields" class="improvised-fields hidden">
           <label>Action Name<input id="improvisedName" maxlength="80" value="Improvised Action" /></label>
           <div id="improvisedTimingMode" class="improvised-timing-mode" role="group" aria-label="Improvised timing input mode">
@@ -449,7 +449,7 @@
         <p class="eyebrow">Automatic Actions</p>
         <h2 id="queueDialogTitle">Action Queue</h2>
         <div id="queuedActionList" class="queued-action-list"></div>
-        <p class="queue-note">Queued actions trigger when Decision fills and gain +1 Preparation Rate.</p>
+        <p class="queue-note">Queued actions trigger when Decision fills.</p>
         <div id="queueActionChoices" class="queue-action-choices"></div>
         <div class="vector-modal-actions"><button id="closeQueueDialog" type="button" class="secondary">Close</button></div>
       </div>
