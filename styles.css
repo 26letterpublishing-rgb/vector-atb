@@ -5092,3 +5092,147 @@ body.poise-modal-open {
     top: 0;
   }
 }
+/* Compact GM cards and content-sized mobile roster. */
+.gm-mode .vector-unit-card {
+  padding: 9px 10px 10px;
+}
+
+.gm-mode .vector-unit-head {
+  grid-template-columns: minmax(150px, 0.9fr) minmax(190px, 1.2fr) minmax(108px, auto) auto;
+  gap: 7px 10px;
+  margin-bottom: 7px;
+}
+
+.gm-mode .vector-unit-head .vector-action-line {
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 5px;
+  background: rgba(3, 7, 12, 0.5);
+}
+
+.gm-mode .vector-unit-head .vector-action-line strong { font-size: 0.8rem; }
+.gm-mode .vector-unit-head .vector-action-line span { font-size: 0.62rem; }
+.gm-mode .vector-unit-head .unit-readout { min-width: 108px; }
+.gm-mode .vector-unit-head .unit-readout strong { font-size: 1rem; }
+.gm-mode .vector-unit-head .unit-readout span { font-size: 0.6rem; }
+.gm-mode .vector-card-tools { gap: 5px; }
+
+.gm-mode .vector-icon-button {
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+}
+
+.gm-mode .vector-unit-head .unit-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.gm-mode .vector-unit-head .unit-actions label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  color: #8fa39c;
+  font-size: 0.55rem;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.gm-mode .vector-unit-head .unit-actions input {
+  width: 116px;
+  min-height: 28px;
+  height: 28px;
+  padding: 3px 6px;
+  font-size: 0.7rem;
+}
+
+.gm-mode .vector-unit-head .unit-actions input[data-action="commandWindow"] { width: 48px; }
+.gm-mode .vector-unit-head .unit-actions input[type="color"] { width: 34px; padding: 2px; }
+
+.gm-mode .vector-unit-head .unit-actions .mini {
+  min-height: 29px;
+  height: 29px;
+  padding: 3px 9px;
+  font-size: 0.66rem;
+}
+
+@media (max-width: 720px) {
+  body.player-mode {
+    height: auto;
+    min-height: 100svh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .player-mode .shell {
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    padding-bottom: calc(78px + env(safe-area-inset-bottom));
+  }
+
+  .player-mode #initiativePanel {
+    display: block;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    padding-bottom: 10px;
+  }
+
+  .player-mode #initiativePanel > .section-head {
+    position: sticky;
+    top: 0;
+  }
+
+  .player-mode .unit-list {
+    display: grid;
+    grid-auto-rows: max-content;
+    align-content: start;
+    min-height: 0;
+    max-height: calc(100svh - 170px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 1px 0 3px;
+    overscroll-behavior: contain;
+    scrollbar-gutter: auto;
+    touch-action: pan-y;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .player-mode .player-compact-card {
+    align-self: start;
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 6px 7px 7px;
+  }
+
+  .player-mode .player-compact-card .vector-phase-meter {
+    height: 22px;
+    margin-top: 5px;
+  }
+
+  .player-mode .player-compact-card.own-unit {
+    position: sticky;
+    top: 0;
+  }
+}
+
+@media (max-width: 900px) {
+  .gm-mode .vector-unit-head {
+    grid-template-columns: minmax(0, 1fr) minmax(130px, auto) auto;
+  }
+
+  .gm-mode .vector-unit-head .vector-action-line {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .gm-mode .vector-unit-head .unit-actions { grid-row: 3; }
+}

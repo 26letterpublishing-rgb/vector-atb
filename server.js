@@ -18,7 +18,7 @@ const clients = new Map();
 let stateSequence = 0;
 
 const ACTIONS = {
-  move: { id: "move", label: "Move", kind: "move", skill: null, hasResolution: false, targetMode: "none", risk: { preparation: 0, execution: 1, recovery: 0 }, notes: "Move a chosen distance." },
+  move: { id: "move", label: "Move", kind: "move", skill: null, hasResolution: true, targetMode: "none", risk: { preparation: 0, execution: 1, recovery: 0 }, notes: "Move a chosen distance." },
   use_item: { id: "use_item", label: "Use Item", kind: "item", skill: "initiative", hasResolution: true, targetMode: "optional", risk: { preparation: 1, execution: 3, recovery: 2 }, notes: "Use or activate an item." },
   defense: { id: "defense", label: "Defense", kind: "standard", skill: "dodge", hasResolution: false, targetMode: "none", risk: { preparation: 0, execution: 0, recovery: 0 }, notes: "Focus entirely on defense." },
   melee_attack: { id: "melee_attack", label: "Melee Attack", kind: "attack", skill: "melee", hasResolution: true, targetMode: "required", risk: null, notes: "Attack with a melee weapon." },

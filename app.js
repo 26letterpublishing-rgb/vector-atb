@@ -299,15 +299,16 @@ function unitCardMarkup(unit, { gm = false, player = false } = {}) {
       <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label player-unit-state"><strong>${escapeHtml(phaseLabel(unit))}</strong>${compactAction ? `<span class="player-compact-action">${escapeHtml(compactAction)}</span>` : ""}</div></div>
     </article>`;
   }
+  const gmControls = gm ? `<div class="unit-actions"><label>Name<input data-action="name" data-id="${escapeHtml(unit.id)}" value="${escapeHtml(unit.characterName)}" /></label>${unit.team === "pc" ? `<label>Command<input data-action="commandWindow" data-id="${escapeHtml(unit.id)}" type="number" min="1" value="${unit.commandWindow || DEFAULT_COMMAND_WINDOW}" /></label>` : ""}<label>Color<input data-action="color" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color)}" /></label><button class="mini" data-action="nudge" data-id="${escapeHtml(unit.id)}">+5%</button><button class="mini danger" data-action="remove" data-id="${escapeHtml(unit.id)}">Remove</button></div>` : "";
   return `${cardStart}
     <div class="vector-unit-head">
-      <div><div class="unit-name">${escapeHtml(unit.characterName)}</div><div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - DEC ${formatRate(displayedDecisionRate(unit))} - Move ${unit.moveSpeed}</div></div>
+      <div class="vector-unit-identity"><div class="unit-name">${escapeHtml(unit.characterName)}</div><div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - DEC ${formatRate(displayedDecisionRate(unit))} - Move ${unit.moveSpeed}</div></div>
+      <div class="vector-action-line"><strong class="unit-action-name">${escapeHtml(awaitingPlayer ? "Awaiting Player" : actionLabel(unit))}</strong><span class="unit-risk">${escapeHtml(currentRiskLabel(unit))}</span></div>
       <div class="unit-readout"><strong class="unit-percent">${Math.floor(pct(unit))}%</strong><span class="unit-estimate">${escapeHtml(estimatePhase(unit))}</span></div>
       ${gm ? `<div class="vector-card-tools"><button class="vector-icon-button damage-button" data-action="stagger" data-id="${escapeHtml(unit.id)}" title="Damage / Stagger" aria-label="Apply Stagger"><span class="target-symbol"></span></button>${poiseTool}</div>` : ""}
+      ${gmControls}
     </div>
     <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label">${escapeHtml(awaitingPlayer ? "AWAITING PLAYER DECISION" : phaseLabel(unit))}</div></div>
-    <div class="vector-action-line"><strong class="unit-action-name">${escapeHtml(awaitingPlayer ? "Awaiting Player" : actionLabel(unit))}</strong><span class="unit-risk">${escapeHtml(currentRiskLabel(unit))}</span></div>
-    ${gm ? `<div class="unit-actions"><label>Name<input data-action="name" data-id="${escapeHtml(unit.id)}" value="${escapeHtml(unit.characterName)}" /></label>${unit.team === "pc" ? `<label>Command<input data-action="commandWindow" data-id="${escapeHtml(unit.id)}" type="number" min="1" value="${unit.commandWindow || DEFAULT_COMMAND_WINDOW}" /></label>` : ""}<label>Color<input data-action="color" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color)}" /></label><button class="mini" data-action="nudge" data-id="${escapeHtml(unit.id)}">+5%</button><button class="mini danger" data-action="remove" data-id="${escapeHtml(unit.id)}">Remove</button></div>` : ""}
     ${gm && !awaitingPlayer ? actionButtonsMarkup(unit) : ""}
   </article>`;
 }
