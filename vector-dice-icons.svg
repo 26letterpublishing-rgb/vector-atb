@@ -15,7 +15,7 @@
     <path d="m24 3 8 17-8 25-8-25ZM4 22l12-2h16l12 2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
   </symbol>
   <symbol id="d12" viewBox="0 0 48 48">
-    <path d="m24 3 12 4 8 10v14l-8 10-12 4-12-4-8-10V17l8-10Z" fill="currentColor" fill-opacity=".1" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
-    <path d="m24 10 9 7-3 11H18l-3-11ZM24 3v7M12 7l3 10L4 17m40 0-11 0 3-10M4 31l14-3-6 13m32-10-14-3 6 13M24 45l-6-17m6 17 6-17" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round"/>
+    <path d="m24 3 17 10 2 20-19 12L5 33l2-20Z" fill="currentColor" fill-opacity=".08" stroke="currentColor" stroke-width="2.4" stroke-linejoin="round"/>
+    <path d="m24 7 11 7-4 13H17l-4-13Z" fill="currentColor" fill-opacity=".24" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
   </symbol>
-</svg>
+</svg>

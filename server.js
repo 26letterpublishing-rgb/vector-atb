@@ -310,6 +310,7 @@ function createRoom() {
     lastKeepAliveAt: Date.now(),
     lastTick: Date.now(),
     hasEngagedClock: false,
+    advancementLocked: false,
     threshold: THRESHOLD,
     units: [],
     log: [],
@@ -362,6 +363,7 @@ function publicState(room) {
     queueAvailable: queueIsAvailable(room),
     hardPaused: room.hardPaused,
     hasEngagedClock: room.hasEngagedClock,
+    advancementLocked: room.advancementLocked,
     lastInterruptedId: room.lastInterruptedId,
     lastInterruptedAt: room.lastInterruptedAt,
     notice: clone(room.notice),
@@ -410,6 +412,7 @@ function snapshotRoom(room) {
     lastInterruptedAt: room.lastInterruptedAt,
     notice: clone(room.notice),
     hasEngagedClock: room.hasEngagedClock,
+    advancementLocked: room.advancementLocked,
     units: clone(room.units),
     log: clone(room.log),
   };
@@ -421,8 +424,12 @@ function saveUndoSnapshot(room) {
 
 function restoreUndoSnapshot(room) {
   if (!room.undoSnapshot) return false;
+  const permanentlyEngaged = new Set(room.units.filter((unit) => unit.hasEngagedCombat).map((unit) => unit.id));
+  const roomHasEngaged = room.hasEngagedClock;
   const snap = room.undoSnapshot;
   Object.assign(room, clone(snap));
+  room.hasEngagedClock = room.hasEngagedClock || roomHasEngaged;
+  for (const unit of room.units) if (permanentlyEngaged.has(unit.id)) unit.hasEngagedCombat = true;
   room.commandSpeed = positiveRate(snap.commandSpeed, 1);
   room.commandDeadline = snap.commandRemaining === null ? null : Date.now() + (snap.commandRemaining / room.commandSpeed) * 1000;
   room.undoSnapshot = null;
@@ -445,6 +452,15 @@ function broadcast(room) {
 
 function canStartClock(room) {
   return room.units.length > 0 && !room.pausedForTurn && !room.pausedForResolution && !room.pausedForStagger;
+}
+
+function engageClock(room) {
+  room.running = true;
+  room.resumeAfterTurn = true;
+  room.hasEngagedClock = true;
+  room.advancementLocked = true;
+  room.lastTick = Date.now();
+  for (const unit of room.units) unit.hasEngagedCombat = true;
 }
 
 function clearCommand(room) {
@@ -914,6 +930,7 @@ function createUnit(body) {
   return {
     id: id(),
     characterId: String(body.characterId || "").trim().slice(0, 100),
+    hasEngagedCombat: Boolean(body.hasEngagedCombat),
     playerName: String(body.playerName || "Player").trim().slice(0, 40) || "Player",
     characterName: String(body.characterName || "Character").trim().slice(0, 40) || "Character",
     stats,
@@ -945,7 +962,37 @@ function createUnit(body) {
     actorType: "character",
     color: normalizeColor(body.color),
     tieSeed: Math.random(),
+    pendingCharacterUpdate: null,
   };
+}
+
+function characterUpdateFromBody(body, unit) {
+  return {
+    characterId: String(body.characterId || unit.characterId || "").trim().slice(0, 100),
+    characterName: String(body.characterName || unit.characterName || "Character").trim().slice(0, 40) || unit.characterName,
+    color: normalizeColor(body.color || unit.color),
+    stats: normalizeStats(body.stats || unit.stats),
+    coreLost: whole(body.coreLost, unit.coreLost, 0, 10),
+    poiseMax: whole(body.poiseMax, unit.basePoiseMax, 0, 99),
+    totalSpent: whole(body.experience?.totalSpent, unit.experience.totalSpent, 0, 999999999),
+    totalEarned: whole(body.experience?.totalEarned, unit.experience.totalEarned, 0, 999999999),
+  };
+}
+
+function applyCharacterUpdate(unit, update) {
+  const linkingNewCharacter = !unit.characterId && Boolean(update.characterId);
+  unit.characterId = update.characterId;
+  unit.characterName = update.characterName;
+  unit.color = update.color;
+  unit.stats = update.stats;
+  unit.coreLost = update.coreLost;
+  unit.basePoiseMax = update.poiseMax;
+  unit.poiseMax = update.poiseMax;
+  unit.poiseRemaining = update.poiseMax;
+  if (linkingNewCharacter) unit.experience.totalEarned = Math.max(unit.experience.totalEarned, update.totalEarned);
+  unit.experience.totalSpent = clamp(update.totalSpent, 0, unit.experience.totalEarned);
+  unit.experience.available = Math.max(0, unit.experience.totalEarned - unit.experience.totalSpent);
+  unit.pendingCharacterUpdate = null;
 }
 
 async function handleAction(req, res) {
@@ -977,7 +1024,7 @@ async function handleAction(req, res) {
     }
     if (targets.length) {
       const recipient = body.targetId === "__all__" ? "all PCs" : targets[0].characterName;
-      pushLog(room, "GM awarded   to .");
+      pushLog(room, `GM awarded ${amount} ${resource === "karma" ? "Karma" : "EXP"} to ${recipient}.`);
     }
   } else if (action === "removeUnit") {
     const unit = room.units.find((entry) => entry.id === body.id);
@@ -989,7 +1036,7 @@ async function handleAction(req, res) {
     moveToNextOrClock(room);
   } else if (action === "setRunning") {
     if (Boolean(body.running) && canStartClock(room) && !room.hardPaused) {
-      room.running = true; room.resumeAfterTurn = true; room.hasEngagedClock = true; room.lastTick = Date.now(); pushLog(room, "Clock started.");
+      engageClock(room); pushLog(room, "Clock started.");
     }
   } else if (action === "setHardPaused") {
     room.hardPaused = Boolean(body.paused); room.lastTick = Date.now(); pushLog(room, room.hardPaused ? "All timers paused." : "All timers resumed.");
@@ -1000,7 +1047,7 @@ async function handleAction(req, res) {
     } else if (room.running || room.pausedForTurn || room.pausedForResolution || room.pausedForStagger) {
       room.hardPaused = true; room.lastTick = Date.now(); pushLog(room, "All timers paused.");
     } else if (canStartClock(room)) {
-      room.running = true; room.resumeAfterTurn = true; room.hasEngagedClock = true; room.lastTick = Date.now(); pushLog(room, "Clock started.");
+      engageClock(room); pushLog(room, "Clock started.");
     }
   } else if (action === "setCommandWindow") {
     const unit = room.units.find((entry) => entry.id === body.id);
@@ -1011,6 +1058,17 @@ async function handleAction(req, res) {
   } else if (action === "setColor") {
     const unit = room.units.find((entry) => entry.id === body.id);
     if (unit) unit.color = normalizeColor(body.color);
+  } else if (action === "updateCharacter") {
+    const unit = room.units.find((entry) => entry.id === body.id);
+    if (unit && unit.controlledBy === "player" && (!unit.characterId || !body.characterId || unit.characterId === body.characterId)) {
+      const update = characterUpdateFromBody(body, unit);
+      if (room.advancementLocked) {
+        unit.characterId = update.characterId;
+        unit.characterName = update.characterName;
+        unit.color = update.color;
+        unit.pendingCharacterUpdate = update;
+      } else applyCharacterUpdate(unit, update);
+    }
   } else if (action === "chooseAction") {
     const unit = room.units.find((entry) => entry.id === body.id);
     if (unit && room.activeId === unit.id && !room.pausedForResolution) {
@@ -1056,11 +1114,12 @@ async function handleAction(req, res) {
     }
   } else if (action === "reset") {
     for (const unit of room.units) {
+      if (unit.pendingCharacterUpdate) applyCharacterUpdate(unit, unit.pendingCharacterUpdate);
       unit.phase = "decision"; unit.phaseProgress = 0; unit.currentAction = null; unit.actionQueue = []; unit.lastExecutedActionId = null; unit.decisionBoost = false; unit.moveDecisionBoost = false; unit.commandExpired = false; unit.staggerRate = null; unit.staggerImmunity = false; unit.poiseLocked = false; unit.poiseMax = whole(unit.basePoiseMax, unit.stats.composure, 0, 99); unit.poiseRemaining = unit.poiseMax; unit.pendingAttackPoise = { heavyStagger: false, poiseBreaker: false }; unit.recoveryPoiseStacks = []; unit.cleanExecutionCount = 0; unit.totalExecutionCount = 0;
     }
-    room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.lastInterruptedId = null; room.lastInterruptedAt = 0; room.notice = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter reset.");
+    room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.advancementLocked = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.lastInterruptedId = null; room.lastInterruptedAt = 0; room.notice = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter reset.");
   } else if (action === "clearEncounter") {
-    room.units = []; room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.notice = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter cleared.");
+    room.units = []; room.running = false; room.pausedForTurn = false; room.pausedForResolution = false; room.pausedForStagger = false; room.resumeAfterTurn = false; room.hardPaused = false; room.advancementLocked = false; room.activeId = null; room.activeAction = null; room.pendingStagger = null; room.notice = null; clearCommand(room); room.lastTick = Date.now(); pushLog(room, "Encounter cleared.");
   } else if (action === "nudge") {
     const unit = room.units.find((entry) => entry.id === body.id);
     if (unit && !room.pausedForTurn && !room.pausedForResolution && !room.pausedForStagger) {

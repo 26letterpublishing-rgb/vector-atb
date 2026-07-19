@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vector ATB Sync</title>
-    <link rel="stylesheet" href="styles.css?v=20260719-character-sheet" />
-    <link rel="stylesheet" href="character-sheet.css?v=20260719-character-sheet" />
+    <link rel="stylesheet" href="styles.css?v=20260719-character-sheet-r2" />
+    <link rel="stylesheet" href="character-sheet.css?v=20260719-character-sheet-r2" />
   </head>
   <body>
     <main class="shell">
@@ -29,6 +29,7 @@
             <p class="eyebrow">Vector Record</p>
             <h1 id="characterCreatorTitle">Character Sheet</h1>
           </div>
+          <span id="characterSaveState" class="character-save-state" role="status">Local draft</span>
           <div class="character-file-actions">
             <button id="characterImport" class="secondary" type="button">Import File</button>
             <button id="characterExport" class="secondary" type="button">Export / Share</button>
@@ -43,7 +44,6 @@
             <select id="characterSavedSelect"></select>
           </label>
           <button id="characterNew" type="button">New</button>
-          <span id="characterSaveState" class="character-save-state" role="status">Local draft</span>
         </div>
 
         <section class="character-identity-strip">
@@ -51,6 +51,7 @@
             Character Name
             <input id="characterSheetName" maxlength="40" value="New Vector" />
           </label>
+          <button id="characterInfo" class="character-info-button secondary" type="button">Info</button>
           <label class="character-color-field">
             Color
             <input id="characterSheetColor" type="color" value="#39e58f" />
@@ -63,17 +64,17 @@
             <span>Spent EXP</span>
             <strong id="characterSpentExp">0</strong>
           </div>
-          <div class="character-resource-readout karma">
-            <span>Karma</span>
-            <strong id="characterKarma">0</strong>
-          </div>
         </section>
+
+        <div id="characterAdvancementNotice" class="character-advancement-notice hidden" role="status">
+          Advancement is locked until the GM resets the encounter.
+        </div>
 
         <nav id="characterTabs" class="character-tabs" aria-label="Character sheet sections">
           <button class="active" type="button" data-character-tab="attributes" aria-selected="true">Attributes</button>
-          <button type="button" data-character-tab="skills" aria-selected="false">Skills</button>
           <button type="button" data-character-tab="vitals" aria-selected="false">Vitals</button>
           <button type="button" data-character-tab="network" aria-selected="false">Network</button>
+          <button type="button" data-character-tab="equipment" aria-selected="false">Equipment</button>
         </nav>
 
         <div class="character-sheet-body">
@@ -85,14 +86,12 @@
               </div>
               <div class="character-build-actions">
                 <button id="characterUndo" class="secondary" type="button">Undo Last Purchase</button>
+                <button id="characterRevert" class="secondary" type="button">Revert to Last Save</button>
                 <button id="characterReset" class="danger" type="button">Reset Build</button>
               </div>
             </div>
             <div id="characterAttributeGrid" class="character-attribute-grid"></div>
-          </section>
-
-          <section class="character-tab-panel hidden" data-character-panel="skills">
-            <div class="character-section-head character-skill-head">
+            <div class="character-section-head character-skill-head character-skills-divider">
               <div>
                 <p class="eyebrow">Flat Bonuses</p>
                 <h2>Skills</h2>
@@ -102,7 +101,6 @@
                 <input id="characterSkillSearch" type="search" placeholder="Search" autocomplete="off" />
               </label>
             </div>
-            <div class="character-skill-columns" aria-hidden="true"><span>Skill</span><span>Rating</span><span>Next</span><span></span></div>
             <div id="characterSkillList" class="character-skill-list"></div>
           </section>
 
@@ -114,10 +112,10 @@
               </div>
             </div>
             <div class="character-derived-grid">
-              <div><span>Move Speed</span><strong id="characterMoveSpeed">2</strong></div>
-              <div><span>Stability Threshold</span><strong id="characterStabilityThreshold">2</strong></div>
-              <div><span>Core Threshold</span><strong id="characterCoreThreshold">2</strong></div>
-              <div><span>Poise</span><strong id="characterPoise">3 / 3</strong></div>
+              <div><span>Move Speed</span><strong id="characterMoveSpeed">2</strong><small id="characterMoveFormula">DEX 2</small></div>
+              <div><span>Stability Threshold</span><strong id="characterStabilityThreshold">2</strong><small id="characterStabilityFormula">HTH 2 + Resilience 0</small></div>
+              <div><span>Core Threshold</span><strong id="characterCoreThreshold">2</strong><small id="characterCoreFormula">HTH 2 + Resilience 0</small></div>
+              <div><span>Poise</span><strong id="characterPoise">3 / 3</strong><small>Base encounter pool</small></div>
             </div>
             <div id="characterDamageTracks" class="character-damage-tracks"></div>
           </section>
@@ -137,6 +135,50 @@
             <div class="character-network-notes">
               <label>Affiliations<textarea id="characterAffiliations" rows="6" placeholder="One affiliation per line"></textarea></label>
               <label>Achievements<textarea id="characterAchievements" rows="6" placeholder="One achievement per line"></textarea></label>
+            </div>
+          </section>
+
+          <section class="character-tab-panel hidden" data-character-panel="equipment">
+            <div class="character-section-head">
+              <div>
+                <p class="eyebrow">Carried Resources</p>
+                <h2>Equipment</h2>
+              </div>
+            </div>
+            <div class="character-equipment-grid">
+              <article class="character-karma-readout">
+                <span>Karma</span>
+                <strong id="characterKarma">0</strong>
+              </article>
+              <div class="character-equipment-placeholder">Weapons and gear will appear here.</div>
+            </div>
+          </section>
+
+          <section class="character-tab-panel hidden" data-character-panel="info">
+            <div class="character-section-head">
+              <div>
+                <p class="eyebrow">Raw Reference</p>
+                <h2>Formulas</h2>
+              </div>
+              <button id="characterInfoClose" class="secondary" type="button">Back to Sheet</button>
+            </div>
+            <div class="character-formula-grid">
+              <article><strong>Attribute Roll</strong><code>Top 2 fused values + Skill - missing Core</code></article>
+              <article><strong>ATB Attribute</strong><code>max(1, Rating - missing Core)</code></article>
+              <article><strong>Decision Rate</strong><code>(INT + Initiative) x 5</code></article>
+              <article><strong>Move Speed</strong><code>DEX 2-4: +1 each; 5-10: +1 per 2; 11-19: +1 per 3; max 10</code></article>
+              <article><strong>Move Time</strong><code>3 x Distance / Move Speed</code></article>
+              <article><strong>Move Edges</strong><code>Preparation 500; Recovery 500</code></article>
+              <article><strong>Use Item Preparation</strong><code>(PER + Initiative) x 10 + 300</code></article>
+              <article><strong>Use Item Execution</strong><code>DEX + Initiative + 5</code></article>
+              <article><strong>Use Item Recovery</strong><code>(DEX + Initiative) x 10 + 300</code></article>
+              <article><strong>Weapon Preparation</strong><code>(PER + Skill + Weapon Preparation) x 10</code></article>
+              <article><strong>Repeated Action</strong><code>(PER + Skill + Weapon Preparation) x 20</code></article>
+              <article><strong>Weapon Execution</strong><code>DEX + Skill + Weapon Execution</code></article>
+              <article><strong>Weapon Recovery</strong><code>Duration = clamp(Weapon Recovery / 15 - 0.3 x (DEX + Skill - 14), 0.1, 30)</code></article>
+              <article><strong>Damage Thresholds</strong><code>HTH + Resilience</code></article>
+              <article><strong>Shell Stagger Rate</strong><code>(DEX + Composure) x 2; minimum 3</code></article>
+              <article><strong>Stability / Core Stagger</strong><code>DEX + Composure; minimum 3</code></article>
             </div>
           </section>
         </div>
@@ -336,6 +378,7 @@
           <div id="playerTopControls" class="player-top-controls hidden">
             <button id="enableAlerts">Enable Sound / Vibration</button>
             <button id="playerLogButton" type="button">Log</button>
+            <button id="playerCharacterSheet" type="button">Character Sheet</button>
             <button id="leaveRoom" class="leave-room">Leave Room</button>
             <div class="player-room-code">
               <span>Room</span>
@@ -618,7 +661,7 @@
       <div id="playerActionChoices" class="action-choice-grid"></div>
     </div>
 
-    <script src="character-sheet.js?v=20260719-character-sheet"></script>
-    <script src="app.js?v=20260719-character-sheet"></script>
+    <script src="character-sheet.js?v=20260719-character-sheet-r2"></script>
+    <script src="app.js?v=20260719-character-sheet-r2"></script>
   </body>
 </html>

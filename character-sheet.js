@@ -3,27 +3,27 @@
 
   const STORAGE_KEY = "vector-characters-v1";
   const FORMAT = "VECTOR_CHARACTER";
-  const VERSION = 1;
+  const VERSION = 2;
   const STARTING_EXP = 70;
 
   const attributes = [
-    { key: "strength", name: "Strength", short: "STR" },
-    { key: "dexterity", name: "Dexterity", short: "DEX" },
-    { key: "health", name: "Health", short: "HTH" },
-    { key: "intellect", name: "Intellect", short: "INT" },
-    { key: "perception", name: "Perception", short: "PER" },
-    { key: "charisma", name: "Charisma", short: "CHA" },
+    { key: "strength", name: "Strength", short: "STR", color: "#ff6673" },
+    { key: "dexterity", name: "Dexterity", short: "DEX", color: "#45d7ff" },
+    { key: "health", name: "Health", short: "HTH", color: "#6de293" },
+    { key: "intellect", name: "Intellect", short: "INT", color: "#ad86ff" },
+    { key: "perception", name: "Perception", short: "PER", color: "#f7d85b" },
+    { key: "charisma", name: "Charisma", short: "CHA", color: "#ff82bd" },
   ];
 
   const skills = [
-    { key: "firearms", name: "Firearms", attribute: "perception" },
-    { key: "dodge", name: "Dodge", attribute: "dexterity" },
-    { key: "melee", name: "Melee", attribute: "dexterity" },
+    { key: "firearms", name: "Firearms", attribute: "perception", hint: "Fire Gun" },
+    { key: "dodge", name: "Dodge", attribute: "dexterity", hint: "Defense" },
+    { key: "melee", name: "Melee", attribute: "dexterity", hint: "Melee / Close Quarters" },
     { key: "awareness", name: "Awareness", attribute: "perception" },
-    { key: "initiative", name: "Initiative", attribute: "intellect" },
-    { key: "composure", name: "Composure", attribute: "dexterity" },
+    { key: "initiative", name: "Initiative", attribute: "intellect", hint: "Decision / Use Item" },
+    { key: "composure", name: "Composure", attribute: "dexterity", hint: "Poise / Stagger" },
     { key: "animalKen", name: "Animal Ken", attribute: "charisma" },
-    { key: "anomalistics", name: "Anomalistics", attribute: "intellect" },
+    { key: "incognito", name: "Incognito", attribute: "charisma" },
     { key: "athletics", name: "Athletics", attribute: "health" },
     { key: "brawn", name: "Brawn", attribute: "strength" },
     { key: "breakFree", name: "Break Free", attribute: "strength" },
@@ -43,7 +43,7 @@
     { key: "persuade", name: "Persuade", attribute: "charisma" },
     { key: "poise", name: "Poise", attribute: "health" },
     { key: "psychology", name: "Psychology", attribute: "intellect" },
-    { key: "resilience", name: "Resilience", attribute: "health" },
+    { key: "resilience", name: "Resilience", attribute: "health", hint: "Stability / Core Thresholds" },
     { key: "resistDeath", name: "Resist Death", attribute: "health" },
     { key: "selfControl", name: "Self-Control", attribute: "intellect" },
     { key: "stealth", name: "Stealth", attribute: "dexterity" },
@@ -69,7 +69,7 @@
   ];
 
   const elementIds = [
-    "characterCreator characterBack characterSavedSelect characterNew characterSaveState characterSheetName characterSheetColor characterAvailableExp characterSpentExp characterKarma characterTabs characterAttributeGrid characterUndo characterReset characterSkillSearch characterSkillList characterMoveSpeed characterStabilityThreshold characterCoreThreshold characterPoise characterDamageTracks characterVectorScore characterNetworkRatings characterAffiliations characterAchievements characterImport characterExport characterSave characterImportFile"
+    "characterCreator characterBack characterSavedSelect characterNew characterSaveState characterSheetName characterSheetColor characterInfo characterInfoClose characterAvailableExp characterSpentExp characterKarma characterTabs characterAttributeGrid characterUndo characterRevert characterReset characterAdvancementNotice characterSkillSearch characterSkillList characterMoveSpeed characterMoveFormula characterStabilityThreshold characterStabilityFormula characterCoreThreshold characterCoreFormula characterPoise characterDamageTracks characterVectorScore characterNetworkRatings characterAffiliations characterAchievements characterImport characterExport characterSave characterImportFile"
   ].join(" ").split(" ");
   const elements = Object.fromEntries(elementIds.map((id) => [id, document.getElementById(id)]));
 
@@ -77,6 +77,7 @@
   let activeTab = "attributes";
   let sessionUndo = [];
   let saveTimer = null;
+  let combatContext = { characterId: "", advancementLocked: false };
 
   function clone(value) { return JSON.parse(JSON.stringify(value)); }
   function clamp(value, minimum, maximum) { return Math.max(minimum, Math.min(maximum, value)); }
@@ -100,13 +101,23 @@
     return Object.fromEntries(skills.map((skill) => [skill.key, 0]));
   }
 
+  function buildCheckpoint(character) {
+    return {
+      attributes: clone(character.attributes),
+      skills: clone(character.skills),
+      totalSpent: whole(character.experience?.totalSpent, 0, 0),
+      advancementLog: clone(character.advancementLog || []),
+    };
+  }
+
   function createCharacter() {
     const now = new Date().toISOString();
-    return {
+    const character = {
       id: recordId(),
       format: FORMAT,
       version: VERSION,
       finalized: false,
+      hasEngagedCombat: false,
       name: "New Vector",
       color: "#39e58f",
       attributes: baseAttributes(),
@@ -127,19 +138,26 @@
         achievements: "",
       },
       advancementLog: [],
+      savedBuild: null,
       createdAt: now,
       updatedAt: now,
     };
+    character.savedBuild = buildCheckpoint(character);
+    return character;
   }
 
   function normalizeCharacter(source = {}) {
     const clean = createCharacter();
     clean.id = String(source.id || clean.id).slice(0, 100);
     clean.finalized = Boolean(source.finalized);
+    clean.hasEngagedCombat = Boolean(source.hasEngagedCombat);
     clean.name = String(source.name || "New Vector").trim().slice(0, 40) || "New Vector";
     clean.color = /^#[0-9a-f]{6}$/i.test(String(source.color || "")) ? source.color : clean.color;
     for (const attribute of attributes) clean.attributes[attribute.key] = whole(source.attributes?.[attribute.key], 2, 2, 20);
-    for (const skill of skills) clean.skills[skill.key] = whole(source.skills?.[skill.key], 0, 0, 999);
+    for (const skill of skills) {
+      const legacyValue = skill.key === "incognito" ? source.skills?.anomalistics : undefined;
+      clean.skills[skill.key] = whole(source.skills?.[skill.key] ?? legacyValue, 0, 0, 999);
+    }
     const spent = whole(source.experience?.totalSpent, 0, 0);
     const earned = whole(source.experience?.totalEarned, STARTING_EXP, STARTING_EXP);
     clean.experience = {
@@ -162,6 +180,22 @@
     clean.network.affiliations = String(source.network?.affiliations || "").slice(0, 10000);
     clean.network.achievements = String(source.network?.achievements || "").slice(0, 10000);
     clean.advancementLog = Array.isArray(source.advancementLog) ? source.advancementLog.slice(-1000).map((entry) => clone(entry)) : [];
+    const savedSource = source.savedBuild || {};
+    clean.savedBuild = {
+      attributes: clone(clean.attributes),
+      skills: clone(clean.skills),
+      totalSpent: clean.experience.totalSpent,
+      advancementLog: clone(clean.advancementLog),
+    };
+    if (source.savedBuild) {
+      for (const attribute of attributes) clean.savedBuild.attributes[attribute.key] = whole(savedSource.attributes?.[attribute.key], clean.attributes[attribute.key], 2, 20);
+      for (const skill of skills) {
+        const legacyValue = skill.key === "incognito" ? savedSource.skills?.anomalistics : undefined;
+        clean.savedBuild.skills[skill.key] = whole(savedSource.skills?.[skill.key] ?? legacyValue, clean.skills[skill.key], 0, 999);
+      }
+      clean.savedBuild.totalSpent = whole(savedSource.totalSpent, clean.experience.totalSpent, 0);
+      clean.savedBuild.advancementLog = Array.isArray(savedSource.advancementLog) ? savedSource.advancementLog.slice(-1000).map(clone) : clone(clean.advancementLog);
+    }
     clean.createdAt = String(source.createdAt || clean.createdAt);
     clean.updatedAt = String(source.updatedAt || clean.updatedAt);
     return clean;
@@ -218,10 +252,10 @@
     return 12;
   }
 
-  function skillUpgradeCost(skillDefinition, character = draft) {
+  function skillUpgradeDetails(skillDefinition, character = draft) {
     const level = whole(character?.skills?.[skillDefinition.key], 0, 0);
     const attribute = whole(character?.attributes?.[skillDefinition.attribute], 2, 2, 20);
-    if (level === 0) return 1;
+    if (level === 0) return { level, attribute, multiplier: 1, cost: 1, formula: "(0 + 1) x 1 = 1 EXP" };
     let multiplier = 4;
     if (attribute >= level * 4) multiplier = 1;
     else if (attribute >= level * 3) multiplier = 2;
@@ -231,7 +265,16 @@
       else if (attribute * 2 <= level) multiplier = 6;
       else multiplier = 5;
     }
-    return (level + 1) * multiplier;
+    const cost = (level + 1) * multiplier;
+    return { level, attribute, multiplier, cost, formula: `(${level} + 1) x ${multiplier} = ${cost} EXP` };
+  }
+
+  function skillUpgradeCost(skillDefinition, character = draft) {
+    return skillUpgradeDetails(skillDefinition, character).cost;
+  }
+
+  function advancementLocked() {
+    return Boolean(combatContext.advancementLocked && draft?.id === combatContext.characterId);
   }
 
   function dicePoolForRating(rawRating) {
@@ -261,12 +304,13 @@
   }
 
   function renderAttributes() {
+    const locked = advancementLocked();
     elements.characterAttributeGrid.innerHTML = attributes.map((attribute) => {
       const rating = draft.attributes[attribute.key];
       const cost = rating < 20 ? attributeUpgradeCost(rating + 1) : null;
-      const disabled = cost === null || cost > draft.experience.available;
-      return `<article class="character-attribute" style="--character-accent:${escapeHtml(draft.color)}">
-        <header><div><span>${attribute.short}</span><h3>${attribute.name}</h3></div><strong>${rating}</strong></header>
+      const disabled = locked || cost === null || cost > draft.experience.available;
+      return `<article class="character-attribute" style="--attribute-accent:${attribute.color}">
+        <header><h3>${attribute.name}</h3><div class="character-attribute-rating"><strong>${rating}</strong><span>${attribute.short}</span></div></header>
         <div class="character-dice" aria-label="${escapeHtml(attribute.name)} dice pool">${diceMarkup(rating)}</div>
         <footer><span>${cost === null ? "Maximum" : `Next: ${cost} EXP`}</span><button type="button" data-buy-attribute="${attribute.key}" aria-label="Increase ${escapeHtml(attribute.name)}" title="Increase ${escapeHtml(attribute.name)}"${disabled ? " disabled" : ""}>+</button></footer>
       </article>`;
@@ -276,16 +320,26 @@
   function renderSkills() {
     const query = elements.characterSkillSearch.value.trim().toLowerCase();
     const visible = query ? skills.filter((skill) => skill.name.toLowerCase().includes(query)) : skills;
-    elements.characterSkillList.innerHTML = visible.map((skill) => {
-      const rating = draft.skills[skill.key];
-      const cost = skillUpgradeCost(skill);
-      return `<div class="character-skill-row">
-        <strong>${escapeHtml(skill.name)}</strong>
-        <span class="character-skill-rating">${rating}</span>
-        <span class="character-skill-cost">${cost} EXP</span>
-        <button type="button" data-buy-skill="${skill.key}" aria-label="Increase ${escapeHtml(skill.name)}" title="Increase ${escapeHtml(skill.name)}"${cost > draft.experience.available ? " disabled" : ""}>+</button>
-      </div>`;
-    }).join("");
+    const locked = advancementLocked();
+    const groups = new Map(attributes.map((attribute, index) => {
+      const group = visible.filter((skill) => skill.attribute === attribute.key);
+      if (!group.length) return [attribute.key, ""];
+      const rows = group.map((skill) => {
+        const rating = draft.skills[skill.key];
+        const details = skillUpgradeDetails(skill);
+        const hint = skill.hint ? `<small class="character-skill-hint">${escapeHtml(skill.hint)}</small>` : "";
+        return `<div class="character-skill-row">
+          <div class="character-skill-name"><strong>${escapeHtml(skill.name)}</strong>${hint}</div>
+          <span class="character-skill-rating">${rating}</span>
+          <span class="character-skill-cost"><strong>${details.cost} EXP</strong><small>${escapeHtml(details.formula)}</small></span>
+          <button type="button" data-buy-skill="${skill.key}" aria-label="Increase ${escapeHtml(skill.name)}" title="Increase ${escapeHtml(skill.name)}"${locked || details.cost > draft.experience.available ? " disabled" : ""}>+</button>
+        </div>`;
+      }).join("");
+      return [attribute.key, `<section class="character-skill-group" data-skill-attribute="${attribute.key}" style="--attribute-accent:${attribute.color};--skill-order:${index + 1}"><header><strong>${attribute.short}</strong><span>${attribute.name}</span></header>${rows}</section>`];
+    }));
+    const left = ["strength", "health", "intellect"].map((key) => groups.get(key)).join("");
+    const right = ["dexterity", "perception", "charisma"].map((key) => groups.get(key)).join("");
+    elements.characterSkillList.innerHTML = left || right ? `<div class="character-skill-column">${left}</div><div class="character-skill-column">${right}</div>` : `<p class="character-skill-empty">No matching skills.</p>`;
   }
 
   function damagePoints(layer) {
@@ -295,13 +349,17 @@
   function renderVitals() {
     const threshold = draft.attributes.health + draft.skills.resilience;
     elements.characterMoveSpeed.textContent = String(moveSpeed(draft.attributes.dexterity));
+    elements.characterMoveFormula.textContent = `DEX ${draft.attributes.dexterity} -> ${moveSpeed(draft.attributes.dexterity)} spaces`;
     elements.characterStabilityThreshold.textContent = String(threshold);
+    elements.characterStabilityFormula.textContent = `HTH ${draft.attributes.health} + Resilience ${draft.skills.resilience}`;
     elements.characterCoreThreshold.textContent = String(threshold);
+    elements.characterCoreFormula.textContent = `HTH ${draft.attributes.health} + Resilience ${draft.skills.resilience}`;
     elements.characterPoise.textContent = `${draft.poise.current} / ${draft.poise.max}`;
     elements.characterDamageTracks.innerHTML = damageLayers.map((definition) => {
       const layer = { ...definition, ...draft.damage[definition.key] };
       const inactive = !layer.active;
-      const corePenalty = definition.key === "core" ? `<small>ATB Penalty: -${10 - layer.current}</small>` : "";
+      const coreLost = 10 - layer.current;
+      const corePenalty = definition.key === "core" ? `<small>Final Score Penalty: ${coreLost ? `-${coreLost}` : "0"}</small>` : "";
       return `<article class="character-damage-track${inactive ? " inactive" : ""}">
         <header><div><h3>${definition.name}</h3>${corePenalty}</div><strong>${inactive ? "Inactive" : `${layer.current} / 10`}</strong></header>
         <div class="damage-track-controls">
@@ -346,8 +404,12 @@
     elements.characterAvailableExp.textContent = String(draft.experience.available);
     elements.characterSpentExp.textContent = String(draft.experience.totalSpent);
     elements.characterKarma.textContent = String(draft.karma);
-    elements.characterUndo.disabled = sessionUndo.length === 0;
-    elements.characterReset.disabled = draft.finalized || draft.experience.totalEarned !== STARTING_EXP;
+    const locked = advancementLocked();
+    elements.characterUndo.disabled = locked || sessionUndo.length === 0;
+    elements.characterRevert.disabled = locked || !draft.savedBuild;
+    elements.characterReset.disabled = locked || draft.hasEngagedCombat;
+    elements.characterReset.title = draft.hasEngagedCombat ? "Reset is unavailable after this character has entered combat." : "Reset Attributes and Skills";
+    elements.characterAdvancementNotice.classList.toggle("hidden", !locked);
     elements.characterSave.textContent = draft.finalized ? "Save Changes" : "Save Character";
     renderVaultSelect();
     renderTabs();
@@ -366,6 +428,7 @@
   }
 
   function buyAttribute(key) {
+    if (advancementLocked()) return;
     const definition = attributes.find((attribute) => attribute.key === key);
     if (!definition || draft.attributes[key] >= 20) return;
     const from = draft.attributes[key];
@@ -378,6 +441,7 @@
   }
 
   function buySkill(key) {
+    if (advancementLocked()) return;
     const definition = skills.find((skill) => skill.key === key);
     if (!definition) return;
     const from = draft.skills[key];
@@ -390,6 +454,7 @@
   }
 
   function undoLastPurchase() {
+    if (advancementLocked()) return;
     const record = sessionUndo.pop();
     if (!record) return;
     if (record.kind === "attribute") draft.attributes[record.key] = record.from;
@@ -402,12 +467,26 @@
   }
 
   function resetBuild() {
-    if (draft.finalized || draft.experience.totalEarned !== STARTING_EXP) return;
-    if (!confirm("Reset all Attribute and Skill purchases for this draft?")) return;
+    if (advancementLocked() || draft.hasEngagedCombat) return;
+    if (!confirm("Reset all Attribute and Skill purchases? Awarded EXP and Karma will be kept.")) return;
     draft.attributes = baseAttributes();
     draft.skills = baseSkills();
-    draft.experience = { available: STARTING_EXP, totalEarned: STARTING_EXP, totalSpent: 0 };
+    draft.experience.totalSpent = 0;
+    draft.experience.available = draft.experience.totalEarned;
     draft.advancementLog = [];
+    sessionUndo = [];
+    schedulePersist();
+    render();
+  }
+
+  function revertToLastSave() {
+    if (advancementLocked() || !draft.savedBuild) return;
+    if (!confirm("Revert Attributes and Skills to the last explicit save? Awarded EXP and Karma will be kept.")) return;
+    draft.attributes = clone(draft.savedBuild.attributes);
+    draft.skills = clone(draft.savedBuild.skills);
+    draft.experience.totalSpent = whole(draft.savedBuild.totalSpent, 0, 0);
+    draft.experience.available = Math.max(0, draft.experience.totalEarned - draft.experience.totalSpent);
+    draft.advancementLog = clone(draft.savedBuild.advancementLog || []);
     sessionUndo = [];
     schedulePersist();
     render();
@@ -437,6 +516,7 @@
     if (!draft) return;
     draft.name = String(elements.characterSheetName.value || draft.name).trim().slice(0, 40) || "Unnamed Vector";
     draft.finalized = true;
+    draft.savedBuild = buildCheckpoint(draft);
     sessionUndo = [];
     persistNow("Saved locally");
     render();
@@ -486,9 +566,9 @@
     const vault = loadVault();
     const index = vault.findIndex((character) => character.id === characterId);
     if (index < 0) return false;
-    const character = vault[index];
-    const nextAvailable = whole(experience?.available, character.experience.available, 0);
+    const character = draft?.id === characterId ? clone(draft) : vault[index];
     const nextEarned = whole(experience?.totalEarned, character.experience.totalEarned, STARTING_EXP);
+    const nextAvailable = Math.max(0, nextEarned - character.experience.totalSpent);
     const nextKarma = whole(karma, character.karma, 0);
     if (character.experience.available === nextAvailable && character.experience.totalEarned === nextEarned && character.karma === nextKarma) return false;
     character.experience.available = nextAvailable;
@@ -511,6 +591,7 @@
       karma: character.karma,
       poiseMax: character.poise.max,
       coreLost: 10 - character.damage.core.current,
+      hasEngagedCombat: character.hasEngagedCombat,
       stats: {
         strength: character.attributes.strength,
         dexterity: character.attributes.dexterity,
@@ -528,6 +609,53 @@
     };
   }
 
+  function finalAttributeScore(attributeResult, skill, coreLost) {
+    return Number(attributeResult || 0) + Number(skill || 0) - whole(coreLost, 0, 0, 10);
+  }
+
+  function markEngaged(characterId) {
+    if (!characterId) return false;
+    const vault = loadVault();
+    const index = vault.findIndex((character) => character.id === characterId);
+    if (index < 0 || vault[index].hasEngagedCombat) return false;
+    vault[index].hasEngagedCombat = true;
+    vault[index].updatedAt = new Date().toISOString();
+    writeVault(vault);
+    if (draft?.id === characterId) draft.hasEngagedCombat = true;
+    window.dispatchEvent(new CustomEvent("vector-characters-changed", { detail: { id: characterId, reason: "combat-history" } }));
+    render();
+    return true;
+  }
+
+  function setCombatContext(next = {}) {
+    combatContext = { characterId: String(next.characterId || ""), advancementLocked: Boolean(next.advancementLocked) };
+    render();
+  }
+
+  function createFromEncounter(unit) {
+    const character = createCharacter();
+    character.name = String(unit?.characterName || "New Vector").slice(0, 40);
+    character.color = /^#[0-9a-f]{6}$/i.test(String(unit?.color || "")) ? unit.color : character.color;
+    for (const attribute of attributes) {
+      if (unit?.stats?.[attribute.key] !== undefined) character.attributes[attribute.key] = whole(unit.stats[attribute.key], 2, 2, 20);
+    }
+    for (const skill of skills) {
+      if (unit?.stats?.[skill.key] !== undefined) character.skills[skill.key] = whole(unit.stats[skill.key], 0, 0, 999);
+    }
+    character.karma = whole(unit?.karma, 0, 0);
+    character.poise = { current: whole(unit?.poiseRemaining, 3, 0, 99), max: whole(unit?.poiseMax, 3, 1, 99) };
+    character.damage.core.current = 10 - whole(unit?.coreLost, 0, 0, 10);
+    character.hasEngagedCombat = Boolean(unit?.hasEngagedCombat);
+    character.finalized = true;
+    character.savedBuild = buildCheckpoint(character);
+    draft = normalizeCharacter(character);
+    sessionUndo = [];
+    activeTab = "attributes";
+    persistNow("Saved locally");
+    render();
+    return clone(draft);
+  }
+
   function bindEvents() {
     elements.characterBack.addEventListener("click", () => { persistNow(); window.dispatchEvent(new CustomEvent("vector-character-close")); });
     elements.characterNew.addEventListener("click", openNew);
@@ -537,7 +665,10 @@
     elements.characterImport.addEventListener("click", () => elements.characterImportFile.click());
     elements.characterImportFile.addEventListener("change", () => importCharacter(elements.characterImportFile.files?.[0]));
     elements.characterUndo.addEventListener("click", undoLastPurchase);
+    elements.characterRevert.addEventListener("click", revertToLastSave);
     elements.characterReset.addEventListener("click", resetBuild);
+    elements.characterInfo.addEventListener("click", () => { activeTab = "info"; renderTabs(); });
+    elements.characterInfoClose.addEventListener("click", () => { activeTab = "attributes"; renderTabs(); });
     elements.characterTabs.addEventListener("click", (event) => {
       const button = event.target.closest("[data-character-tab]");
       if (!button) return;
@@ -598,11 +729,15 @@
     get: (characterId) => { const character = getCharacter(characterId); return character ? clone(character) : null; },
     encounterPayload,
     syncEconomy,
+    markEngaged,
+    setCombatContext,
+    createFromEncounter,
     dicePoolForRating,
     attributeUpgradeCost,
     skillUpgradeCost: (skillKey, character) => {
       const definition = skills.find((skill) => skill.key === skillKey);
       return definition ? skillUpgradeCost(definition, character || draft) : null;
     },
+    finalAttributeScore,
   };
-})();
+})();

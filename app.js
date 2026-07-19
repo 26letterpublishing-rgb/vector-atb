@@ -55,7 +55,7 @@ function $(selector) { return document.querySelector(selector); }
 function $all(selector) { return [...document.querySelectorAll(selector)]; }
 
 const elements = Object.fromEntries(
-  "roomCode connectionStatus welcomePanel createRoom showJoinRoom showCharacterCreation characterCreator roomJoinPanel joinRoomCode confirmJoinRoom backToWelcome topbar joinPanel gmPanel gmTopControls playerTopControls playerPanel playerName characterName playerColor joinCharacterSelect editJoinCharacter joinPlayer openGm rejoinBlock rejoinSelect rejoinPlayer stepTick resetAll clearEncounter undoLastTiming exitCombat gmMuteSound gmAddUnit gmPlayerName gmCharacterName gmCommandWindow gmCommandWindowWrap gmColor gmTeam unitList initiativePanel logPanel readyCount clockState myTurnBanner playerTurnActions playerRoomCode enableAlerts playerLogButton leaveRoom playerFocusScreen playerFocusEyebrow playerFocusCharacter playerFocusLogButton playerFocusRoomCode playerDecisionView playerFocusTimer playerFocusCommandTime playerFocusPrompt playerCommandTrackFill playerFocusActions playerResolutionView playerResolutionAction playerResolutionStatus playerLogDrawer playerLogCommand playerLogCommandTime playerLogList closePlayerLog openAwardDialog awardDialog awardTarget awardResource awardAmount cancelAward confirmAward activePanel activeKicker activeTitle activeMeta logList turnDialog turnDialogKicker activeName activeOwner completeTurn gmDelay gmPanicPause playerPoiseButton playerPoiseCount playerQueueButton playerQueueCount staggerDialog staggerDialogTarget staggerDuration cancelStagger confirmStagger poiseDialog poiseDialogTarget poiseChoiceList cancelPoise staggerResponseDialog staggerResponseTitle staggerResponseText continueStagger ignoreStagger globalNotice actionConfigDialog actionConfigEyebrow actionConfigTitle actionTargetWrap actionTarget actionOtherTargetWrap actionOtherTarget actionDistanceWrap actionDistance improvisedFields improvisedName improvisedTimingMode improvisedModeTime improvisedModeRate improvisedPreparation improvisedPreparationLabel improvisedPreparationUnit improvisedPreparationRisk improvisedExecution improvisedExecutionLabel improvisedExecutionUnit improvisedExecutionRisk improvisedRecovery improvisedRecoveryLabel improvisedRecoveryUnit improvisedRecoveryRisk cancelActionConfig confirmActionConfig queueDialog queuedActionList queueActionChoices closeQueueDialog".split(" ").map((id) => [id, $(`#${id}`)])
+  "roomCode connectionStatus welcomePanel createRoom showJoinRoom showCharacterCreation characterCreator roomJoinPanel joinRoomCode confirmJoinRoom backToWelcome topbar joinPanel gmPanel gmTopControls playerTopControls playerPanel playerName characterName playerColor joinCharacterSelect editJoinCharacter joinPlayer openGm rejoinBlock rejoinSelect rejoinPlayer stepTick resetAll clearEncounter undoLastTiming exitCombat gmMuteSound gmAddUnit gmPlayerName gmCharacterName gmCommandWindow gmCommandWindowWrap gmColor gmTeam unitList initiativePanel logPanel readyCount clockState myTurnBanner playerTurnActions playerRoomCode enableAlerts playerLogButton playerCharacterSheet leaveRoom playerFocusScreen playerFocusEyebrow playerFocusCharacter playerFocusLogButton playerFocusRoomCode playerDecisionView playerFocusTimer playerFocusCommandTime playerFocusPrompt playerCommandTrackFill playerFocusActions playerResolutionView playerResolutionAction playerResolutionStatus playerLogDrawer playerLogCommand playerLogCommandTime playerLogList closePlayerLog openAwardDialog awardDialog awardTarget awardResource awardAmount cancelAward confirmAward activePanel activeKicker activeTitle activeMeta logList turnDialog turnDialogKicker activeName activeOwner completeTurn gmDelay gmPanicPause playerPoiseButton playerPoiseCount playerQueueButton playerQueueCount staggerDialog staggerDialogTarget staggerDuration cancelStagger confirmStagger poiseDialog poiseDialogTarget poiseChoiceList cancelPoise staggerResponseDialog staggerResponseTitle staggerResponseText continueStagger ignoreStagger globalNotice actionConfigDialog actionConfigEyebrow actionConfigTitle actionTargetWrap actionTarget actionOtherTargetWrap actionOtherTarget actionDistanceWrap actionDistance improvisedFields improvisedName improvisedTimingMode improvisedModeTime improvisedModeRate improvisedPreparation improvisedPreparationLabel improvisedPreparationUnit improvisedPreparationRisk improvisedExecution improvisedExecutionLabel improvisedExecutionUnit improvisedExecutionRisk improvisedRecovery improvisedRecoveryLabel improvisedRecoveryUnit improvisedRecoveryRisk cancelActionConfig confirmActionConfig queueDialog queuedActionList queueActionChoices closeQueueDialog".split(" ").map((id) => [id, $(`#${id}`)])
 );
 
 const pcFields = {
@@ -216,6 +216,12 @@ function setRoom(nextState) {
   elements.globalNotice.replaceChildren();
   elements.globalNotice.classList.add("hidden");
   currentRoomCode = state.roomCode;
+  const localUnit = state.units?.find((unit) => unit.id === myUnitId);
+  if (localUnit?.characterId) {
+    window.VectorCharacters?.syncEconomy(localUnit.characterId, localUnit.experience, localUnit.karma);
+    if (localUnit.hasEngagedCombat) window.VectorCharacters?.markEngaged(localUnit.characterId);
+  }
+  window.VectorCharacters?.setCombatContext({ characterId: localUnit?.characterId || "", advancementLocked: Boolean(state.advancementLocked) });
   safeLocalStorageSet("vector-atb-room-code", currentRoomCode);
   elements.roomCode.textContent = currentRoomCode;
   connectEvents();
@@ -229,7 +235,11 @@ function receiveState(nextState) {
   const newLogs = (nextState.log || []).filter((entry) => entry?.id && !seenLogIds.has(entry.id));
   state = nextState;
   const localUnit = state.units?.find((unit) => unit.id === myUnitId);
-  if (localUnit?.characterId) window.VectorCharacters?.syncEconomy(localUnit.characterId, localUnit.experience, localUnit.karma);
+  if (localUnit?.characterId) {
+    window.VectorCharacters?.syncEconomy(localUnit.characterId, localUnit.experience, localUnit.karma);
+    if (localUnit.hasEngagedCombat) window.VectorCharacters?.markEngaged(localUnit.characterId);
+  }
+  window.VectorCharacters?.setCombatContext({ characterId: localUnit?.characterId || "", advancementLocked: Boolean(state.advancementLocked) });
   rememberLogs(state.log);
   if (newLogs.length) showGlobalNotices(newLogs);
   if (mode === "gm" && !previousEngaged && state.hasEngagedClock) playCombatStartSting();
@@ -563,6 +573,52 @@ function applyJoinCharacter(characterId) {
   }
 }
 
+async function syncPlayerCharacter(characterId) {
+  const unit = myUnit();
+  if (!unit || unit.controlledBy !== "player" || !characterId || unit.characterId !== characterId) return;
+  const payload = window.VectorCharacters?.encounterPayload(characterId);
+  if (!payload) return;
+  await action({
+    action: "updateCharacter",
+    id: unit.id,
+    characterId: payload.characterId,
+    characterName: payload.character.name,
+    color: payload.character.color,
+    stats: payload.stats,
+    experience: payload.experience,
+    poiseMax: payload.poiseMax,
+    coreLost: payload.coreLost,
+  });
+}
+
+async function openPlayerCharacterSheet() {
+  let unit = myUnit();
+  if (!unit) return;
+  let characterId = unit.characterId;
+  if (!characterId) {
+    const created = window.VectorCharacters?.createFromEncounter(unit);
+    if (!created) return;
+    characterId = created.id;
+    const payload = window.VectorCharacters.encounterPayload(characterId);
+    const next = await action({
+      action: "updateCharacter",
+      id: unit.id,
+      characterId,
+      characterName: payload.character.name,
+      color: payload.character.color,
+      stats: payload.stats,
+      experience: payload.experience,
+      poiseMax: payload.poiseMax,
+      coreLost: payload.coreLost,
+    });
+    unit = next?.units?.find((entry) => entry.id === unit.id) || unit;
+  }
+  characterReturnMode = "player";
+  window.VectorCharacters?.setCombatContext({ characterId, advancementLocked: Boolean(state?.advancementLocked) });
+  window.VectorCharacters?.openCharacter(characterId);
+  setMode("character");
+}
+
 function renderAwardTargets() {
   if (!elements.awardTarget || !state) return;
   const pcs = state.units.filter((unit) => unit.team === "pc");
@@ -753,7 +809,10 @@ elements.createRoom.addEventListener("click", async () => {
 elements.showJoinRoom.addEventListener("click", () => setMode("roomJoin"));
 elements.showCharacterCreation.addEventListener("click", () => { characterReturnMode = "welcome"; window.VectorCharacters?.openNew(); setMode("character"); });
 window.addEventListener("vector-character-close", () => setMode(characterReturnMode));
-window.addEventListener("vector-characters-changed", refreshJoinCharacterOptions);
+window.addEventListener("vector-characters-changed", (event) => {
+  refreshJoinCharacterOptions();
+  if (event.detail?.reason !== "combat-history") syncPlayerCharacter(event.detail?.id);
+});
 elements.backToWelcome.addEventListener("click", () => setMode("welcome"));
 elements.openGm.addEventListener("click", () => setMode("roomJoin"));
 elements.joinRoomCode.addEventListener("input", () => { elements.joinRoomCode.value = elements.joinRoomCode.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4); });
@@ -777,7 +836,7 @@ elements.joinPlayer.addEventListener("click", async () => {
     team: "pc",
     commandWindow: DEFAULT_COMMAND_WINDOW,
     ...entry,
-    ...(saved ? { characterId: saved.characterId, experience: saved.experience, karma: saved.karma, poiseMax: saved.poiseMax, coreLost: saved.coreLost } : {}),
+    ...(saved ? { characterId: saved.characterId, experience: saved.experience, karma: saved.karma, poiseMax: saved.poiseMax, coreLost: saved.coreLost, hasEngagedCombat: saved.hasEngagedCombat } : {}),
   });
   if (!next) return;
   const unit = saved ? [...next.units].reverse().find((candidate) => candidate.characterId === saved.characterId) : next.units.at(-1);
@@ -865,6 +924,7 @@ elements.leaveRoom.addEventListener("click", () => returnToWelcome("Left the roo
 elements.gmMuteSound.addEventListener("click", () => { gmSoundsMuted = !gmSoundsMuted; safeLocalStorageSet("vector-atb-gm-muted", gmSoundsMuted ? "on" : "off"); elements.gmMuteSound.classList.toggle("muted", gmSoundsMuted); });
 elements.enableAlerts.addEventListener("click", () => { if (alertsEnabled) disablePlayerAlerts(); else enablePlayerAlerts(true); render(); });
 elements.playerLogButton.addEventListener("click", openPlayerLog);
+elements.playerCharacterSheet.addEventListener("click", openPlayerCharacterSheet);
 elements.playerFocusLogButton.addEventListener("click", openPlayerLog);
 elements.closePlayerLog.addEventListener("click", closePlayerLogDrawer);
 
