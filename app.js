@@ -12,6 +12,7 @@ let lastGmClockClickAt = 0;
 let playerFocusWasActive = false;
 let playerActionRequestPending = false;
 let actionConfigContext = null;
+let improvisedInputMode = "time";
 let staggerTargetId = "";
 let poiseTargetId = "";
 
@@ -49,7 +50,7 @@ function $(selector) { return document.querySelector(selector); }
 function $all(selector) { return [...document.querySelectorAll(selector)]; }
 
 const elements = Object.fromEntries(
-  "roomCode connectionStatus welcomePanel createRoom showJoinRoom roomJoinPanel joinRoomCode confirmJoinRoom backToWelcome topbar joinPanel gmPanel gmTopControls playerTopControls playerPanel playerName characterName playerColor joinPlayer openGm rejoinBlock rejoinSelect rejoinPlayer stepTick resetAll clearEncounter undoLastTiming exitCombat gmMuteSound gmAddUnit gmPlayerName gmCharacterName gmCommandWindow gmCommandWindowWrap gmColor gmTeam unitList initiativePanel logPanel readyCount clockState myTurnBanner playerTurnActions playerRoomCode enableAlerts playerLogButton leaveRoom playerFocusScreen playerFocusEyebrow playerFocusCharacter playerFocusLogButton playerFocusRoomCode playerDecisionView playerFocusTimer playerFocusCommandTime playerFocusPrompt playerCommandTrackFill playerFocusActions playerResolutionView playerResolutionAction playerResolutionStatus playerLogDrawer playerLogCommand playerLogCommandTime playerLogList closePlayerLog activePanel activeKicker activeTitle activeMeta logList turnDialog turnDialogKicker activeName activeOwner completeTurn gmDelay gmPanicPause playerPoiseButton playerPoiseCount playerQueueButton playerQueueCount staggerDialog staggerDialogTarget staggerDuration cancelStagger confirmStagger poiseDialog poiseDialogTarget poiseChoiceList cancelPoise staggerResponseDialog staggerResponseTitle staggerResponseText continueStagger ignoreStagger actionConfigDialog actionConfigEyebrow actionConfigTitle actionTargetWrap actionTarget actionOtherTargetWrap actionOtherTarget actionDistanceWrap actionDistance improvisedFields improvisedName improvisedPreparation improvisedPreparationRisk improvisedExecution improvisedExecutionRisk improvisedRecovery improvisedRecoveryRisk cancelActionConfig confirmActionConfig queueDialog queuedActionList queueActionChoices closeQueueDialog".split(" ").map((id) => [id, $(`#${id}`)])
+  "roomCode connectionStatus welcomePanel createRoom showJoinRoom roomJoinPanel joinRoomCode confirmJoinRoom backToWelcome topbar joinPanel gmPanel gmTopControls playerTopControls playerPanel playerName characterName playerColor joinPlayer openGm rejoinBlock rejoinSelect rejoinPlayer stepTick resetAll clearEncounter undoLastTiming exitCombat gmMuteSound gmAddUnit gmPlayerName gmCharacterName gmCommandWindow gmCommandWindowWrap gmColor gmTeam unitList initiativePanel logPanel readyCount clockState myTurnBanner playerTurnActions playerRoomCode enableAlerts playerLogButton leaveRoom playerFocusScreen playerFocusEyebrow playerFocusCharacter playerFocusLogButton playerFocusRoomCode playerDecisionView playerFocusTimer playerFocusCommandTime playerFocusPrompt playerCommandTrackFill playerFocusActions playerResolutionView playerResolutionAction playerResolutionStatus playerLogDrawer playerLogCommand playerLogCommandTime playerLogList closePlayerLog activePanel activeKicker activeTitle activeMeta logList turnDialog turnDialogKicker activeName activeOwner completeTurn gmDelay gmPanicPause playerPoiseButton playerPoiseCount playerQueueButton playerQueueCount staggerDialog staggerDialogTarget staggerDuration cancelStagger confirmStagger poiseDialog poiseDialogTarget poiseChoiceList cancelPoise staggerResponseDialog staggerResponseTitle staggerResponseText continueStagger ignoreStagger actionConfigDialog actionConfigEyebrow actionConfigTitle actionTargetWrap actionTarget actionOtherTargetWrap actionOtherTarget actionDistanceWrap actionDistance improvisedFields improvisedName improvisedTimingMode improvisedModeTime improvisedModeRate improvisedPreparation improvisedPreparationLabel improvisedPreparationUnit improvisedPreparationRisk improvisedExecution improvisedExecutionLabel improvisedExecutionUnit improvisedExecutionRisk improvisedRecovery improvisedRecoveryLabel improvisedRecoveryUnit improvisedRecoveryRisk cancelActionConfig confirmActionConfig queueDialog queuedActionList queueActionChoices closeQueueDialog".split(" ").map((id) => [id, $(`#${id}`)])
 );
 
 const pcFields = {
@@ -82,6 +83,42 @@ function pct(unit) { return clamp(Number(unit?.phaseProgress) || 0, 0, 100); }
 function formatRate(value) { const number = Number(value) || 0; return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""); }
 function formatSecondsValue(seconds) { if (!Number.isFinite(seconds)) return "--"; if (seconds < 10) return `${Math.max(0, seconds).toFixed(2)}s`; return `${Math.max(0, seconds).toFixed(1)}s`; }
 function formatClock(seconds) { const total = Math.max(0, Math.ceil(Number(seconds) || 0)); return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`; }
+
+const improvisedTimingFields = [
+  { input: "improvisedPreparation", label: "improvisedPreparationLabel", unit: "improvisedPreparationUnit", phase: "Preparation" },
+  { input: "improvisedExecution", label: "improvisedExecutionLabel", unit: "improvisedExecutionUnit", phase: "Execution" },
+  { input: "improvisedRecovery", label: "improvisedRecoveryLabel", unit: "improvisedRecoveryUnit", phase: "Recovery" },
+];
+
+function formatTimingInput(value) {
+  const rounded = Math.round(value * 10000) / 10000;
+  if (Math.abs(rounded - Math.round(rounded)) < 0.001) return String(Math.round(rounded));
+  return String(rounded);
+}
+
+function setImprovisedInputMode(nextMode, { convert = true } = {}) {
+  if (!['time', 'rate'].includes(nextMode)) return;
+  if (convert && nextMode !== improvisedInputMode) {
+    for (const field of improvisedTimingFields) {
+      const input = elements[field.input];
+      const minimum = improvisedInputMode === "time" ? 0.1 : 0.01;
+      const current = Math.max(minimum, Number(input.value) || minimum);
+      input.value = formatTimingInput(100 / current);
+    }
+  }
+  improvisedInputMode = nextMode;
+  const timeMode = nextMode === "time";
+  elements.improvisedModeTime.classList.toggle("active", timeMode);
+  elements.improvisedModeRate.classList.toggle("active", !timeMode);
+  elements.improvisedModeTime.setAttribute("aria-pressed", String(timeMode));
+  elements.improvisedModeRate.setAttribute("aria-pressed", String(!timeMode));
+  for (const field of improvisedTimingFields) {
+    elements[field.label].textContent = `${field.phase} ${timeMode ? "Time" : "Rate"}`;
+    elements[field.unit].textContent = timeMode ? "seconds" : "rate";
+    elements[field.input].min = timeMode ? "0.1" : "0.01";
+    elements[field.input].max = timeMode ? "10000" : "1000";
+  }
+}
 
 function actions() { return Array.isArray(state?.actions) && state.actions.length ? state.actions : actionFallbacks; }
 function actionById(actionId) { return actions().find((entry) => entry.id === actionId) || actionFallbacks.at(-1); }
@@ -475,6 +512,7 @@ function openActionConfig(unitId, actionId, { queue = false } = {}) {
   elements.actionDistanceWrap.classList.toggle("hidden", template.kind !== "move");
   elements.actionTargetWrap.classList.toggle("hidden", template.targetMode === "none");
   elements.improvisedFields.classList.toggle("hidden", template.id !== "improvised" || mode !== "gm");
+  if (template.id === "improvised" && mode === "gm") setImprovisedInputMode("time");
   elements.actionOtherTargetWrap.classList.add("hidden");
   if (template.targetMode !== "none") {
     elements.actionTarget.innerHTML = targetOptions(unit);
@@ -508,9 +546,9 @@ function confirmConfiguredAction() {
   const distance = template.kind === "move" ? Math.max(0.01, numberValue("actionDistance", 1)) : null;
   const customAction = template.id === "improvised" && mode === "gm" ? {
     label: elements.improvisedName.value,
-    preparationRate: numberValue("improvisedPreparation", 10), preparationRisk: numberValue("improvisedPreparationRisk", 1),
-    executionRate: numberValue("improvisedExecution", 20), executionRisk: numberValue("improvisedExecutionRisk", 3),
-    recoveryRate: numberValue("improvisedRecovery", 15), recoveryRisk: numberValue("improvisedRecoveryRisk", 2), hasResolution: true,
+    [`preparation${improvisedInputMode === "time" ? "Time" : "Rate"}`]: numberValue("improvisedPreparation", improvisedInputMode === "time" ? 10 : 10), preparationRisk: numberValue("improvisedPreparationRisk", 1),
+    [`execution${improvisedInputMode === "time" ? "Time" : "Rate"}`]: numberValue("improvisedExecution", improvisedInputMode === "time" ? 5 : 20), executionRisk: numberValue("improvisedExecutionRisk", 3),
+    [`recovery${improvisedInputMode === "time" ? "Time" : "Rate"}`]: numberValue("improvisedRecovery", improvisedInputMode === "time" ? 6.6667 : 15), recoveryRisk: numberValue("improvisedRecoveryRisk", 2), hasResolution: true,
   } : null;
   closeActionConfig();
   submitConfiguredAction({ ...context, targetId, distance, customAction });
@@ -614,6 +652,8 @@ elements.playerFocusActions.addEventListener("pointercancel", () => { playerPoin
 elements.playerFocusActions.addEventListener("click", (event) => { if (performance.now() - lastPlayerPointerActivationAt < 700) return; const button = event.target.closest("button[data-action-id]"); if (button) openActionConfig(myUnitId, button.dataset.actionId); });
 
 elements.actionTarget.addEventListener("change", () => elements.actionOtherTargetWrap.classList.toggle("hidden", elements.actionTarget.value !== "__other__"));
+elements.improvisedModeTime.addEventListener("click", () => setImprovisedInputMode("time"));
+elements.improvisedModeRate.addEventListener("click", () => setImprovisedInputMode("rate"));
 elements.cancelActionConfig.addEventListener("click", closeActionConfig);
 elements.confirmActionConfig.addEventListener("click", confirmConfiguredAction);
 elements.actionConfigDialog.addEventListener("keydown", (event) => { if (event.key === "Escape") closeActionConfig(); });

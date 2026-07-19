@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vector ATB Sync</title>
-    <link rel="stylesheet" href="styles.css?v=20260718-player-roster" />
+    <link rel="stylesheet" href="styles.css?v=20260718-recovery-time-toggle" />
   </head>
   <body>
     <main class="shell">
@@ -77,9 +77,9 @@
         <div class="encounter-entry-block">
           <h3>Attributes</h3>
           <div class="stat-entry-grid">
-            <label>Intellect<input id="pcIntellect" type="number" min="0" max="20" value="7" /></label>
-            <label>Dexterity<input id="pcDexterity" type="number" min="0" max="20" value="7" /></label>
-            <label>Perception<input id="pcPerception" type="number" min="0" max="20" value="7" /></label>
+            <label>Intellect<input id="pcIntellect" type="number" min="2" max="20" value="7" /></label>
+            <label>Dexterity<input id="pcDexterity" type="number" min="2" max="20" value="7" /></label>
+            <label>Perception<input id="pcPerception" type="number" min="2" max="20" value="7" /></label>
           </div>
           <h3>Skills</h3>
           <div class="stat-entry-grid">
@@ -95,7 +95,7 @@
             <label>Prep Risk<select id="pcPreparationRisk"><option value="0">0</option><option value="1" selected>+</option><option value="2">++</option><option value="3">+++</option></select></label>
             <label>Execution<input id="pcWeaponExecution" type="number" min="0.01" step="0.01" value="20" /></label>
             <label>Exec Risk<select id="pcExecutionRisk"><option value="0">0</option><option value="1">+</option><option value="2">++</option><option value="3" selected>+++</option></select></label>
-            <label>Recovery<input id="pcWeaponRecovery" type="number" min="0.01" step="0.01" value="15" /></label>
+            <label>Recovery<input id="pcWeaponRecovery" type="number" min="1" max="100" step="1" value="15" /></label>
             <label>Recovery Risk<select id="pcRecoveryRisk"><option value="0">0</option><option value="1">+</option><option value="2" selected>++</option><option value="3">+++</option></select></label>
           </div>
         </div>
@@ -150,9 +150,9 @@
         <details class="gm-character-builder" open>
           <summary>Character and Weapon Stats</summary>
           <div class="stat-entry-grid gm-stat-entry-grid">
-            <label>Intellect<input id="gmIntellect" type="number" min="0" max="20" value="7" /></label>
-            <label>Dexterity<input id="gmDexterity" type="number" min="0" max="20" value="7" /></label>
-            <label>Perception<input id="gmPerception" type="number" min="0" max="20" value="7" /></label>
+            <label>Intellect<input id="gmIntellect" type="number" min="2" max="20" value="7" /></label>
+            <label>Dexterity<input id="gmDexterity" type="number" min="2" max="20" value="7" /></label>
+            <label>Perception<input id="gmPerception" type="number" min="2" max="20" value="7" /></label>
             <label>Initiative<input id="gmInitiative" type="number" min="0" value="7" /></label>
             <label>Composure<input id="gmComposure" type="number" min="0" value="3" /></label>
             <label>Firearms<input id="gmFirearms" type="number" min="0" value="7" /></label>
@@ -164,7 +164,7 @@
             <label>Prep Risk<select id="gmPreparationRisk"><option value="0">0</option><option value="1" selected>+</option><option value="2">++</option><option value="3">+++</option></select></label>
             <label>Weapon Execution<input id="gmWeaponExecution" type="number" min="0.01" step="0.01" value="20" /></label>
             <label>Exec Risk<select id="gmExecutionRisk"><option value="0">0</option><option value="1">+</option><option value="2">++</option><option value="3" selected>+++</option></select></label>
-            <label>Weapon Recovery<input id="gmWeaponRecovery" type="number" min="0.01" step="0.01" value="15" /></label>
+            <label>Weapon Recovery<input id="gmWeaponRecovery" type="number" min="1" max="100" step="1" value="15" /></label>
             <label>Recovery Risk<select id="gmRecoveryRisk"><option value="0">0</option><option value="1">+</option><option value="2" selected>++</option><option value="3">+++</option></select></label>
           </div>
         </details>
@@ -426,11 +426,15 @@
         <label id="actionDistanceWrap" class="vector-modal-field hidden">Distance<input id="actionDistance" type="number" min="0.01" step="0.01" value="1" inputmode="decimal" /></label>
         <div id="improvisedFields" class="improvised-fields hidden">
           <label>Action Name<input id="improvisedName" maxlength="80" value="Improvised Action" /></label>
-          <label>Preparation Rate<input id="improvisedPreparation" type="number" min="0.01" step="0.01" value="10" /></label>
+          <div id="improvisedTimingMode" class="improvised-timing-mode" role="group" aria-label="Improvised timing input mode">
+            <button id="improvisedModeTime" type="button" class="active" aria-pressed="true">Time</button>
+            <button id="improvisedModeRate" type="button" aria-pressed="false">Rate</button>
+          </div>
+          <label><span id="improvisedPreparationLabel">Preparation Time</span><span class="number-with-unit"><input id="improvisedPreparation" type="number" min="0.1" max="10000" step="0.01" value="10" /><small id="improvisedPreparationUnit">seconds</small></span></label>
           <label>Preparation Risk<select id="improvisedPreparationRisk"><option value="0">0</option><option value="1" selected>+</option><option value="2">++</option><option value="3">+++</option></select></label>
-          <label>Execution Rate<input id="improvisedExecution" type="number" min="0.01" step="0.01" value="20" /></label>
+          <label><span id="improvisedExecutionLabel">Execution Time</span><span class="number-with-unit"><input id="improvisedExecution" type="number" min="0.1" max="10000" step="0.01" value="5" /><small id="improvisedExecutionUnit">seconds</small></span></label>
           <label>Execution Risk<select id="improvisedExecutionRisk"><option value="0">0</option><option value="1">+</option><option value="2">++</option><option value="3" selected>+++</option></select></label>
-          <label>Recovery Rate<input id="improvisedRecovery" type="number" min="0.01" step="0.01" value="15" /></label>
+          <label><span id="improvisedRecoveryLabel">Recovery Time</span><span class="number-with-unit"><input id="improvisedRecovery" type="number" min="0.1" max="10000" step="0.01" value="6.6667" /><small id="improvisedRecoveryUnit">seconds</small></span></label>
           <label>Recovery Risk<select id="improvisedRecoveryRisk"><option value="0">0</option><option value="1">+</option><option value="2" selected>++</option><option value="3">+++</option></select></label>
         </div>
         <div class="vector-modal-actions">
@@ -459,6 +463,6 @@
       <div id="playerActionChoices" class="action-choice-grid"></div>
     </div>
 
-    <script src="app.js?v=20260718-player-roster"></script>
+    <script src="app.js?v=20260718-recovery-time-toggle"></script>
   </body>
 </html>

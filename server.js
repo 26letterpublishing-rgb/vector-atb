@@ -80,9 +80,9 @@ function normalizeRisk(value, fallback = 0) {
 
 function normalizeStats(source = {}) {
   return {
-    intellect: whole(source.intellect, 7, 0, 20),
-    dexterity: whole(source.dexterity, 7, 0, 20),
-    perception: whole(source.perception, 7, 0, 20),
+    intellect: whole(source.intellect, 7, 2, 20),
+    dexterity: whole(source.dexterity, 7, 2, 20),
+    perception: whole(source.perception, 7, 2, 20),
     initiative: whole(source.initiative, 7, 0, 99),
     composure: whole(source.composure, 3, 0, 99),
     firearms: whole(source.firearms, 7, 0, 99),
@@ -95,7 +95,7 @@ function normalizeWeapon(source = {}) {
   return {
     preparation: positiveRate(source.preparation, 10),
     execution: positiveRate(source.execution, 20),
-    recovery: positiveRate(source.recovery, 15),
+    recovery: clamp(number(source.recovery, 15), 1, 100),
     risk: {
       preparation: normalizeRisk(source.risk?.preparation ?? source.preparationRisk, 1),
       execution: normalizeRisk(source.risk?.execution ?? source.executionRisk, 3),
@@ -112,7 +112,15 @@ function moveSpeed(dexterity) {
 }
 
 function recoveryRate(dexterity, skill, weaponRecovery) {
-  return positiveRate((25 * (number(dexterity) + number(skill) + 6)) / positiveRate(weaponRecovery, 15));
+  const score = number(dexterity) + number(skill);
+  const duration = clamp(positiveRate(weaponRecovery, 15) / 15 - 0.3 * (score - 14), 0.1, 30);
+  return THRESHOLD / duration;
+}
+
+function improvisedPhaseRate(custom, phase, fallbackRate) {
+  const enteredTime = Number(custom[`${phase}Time`]);
+  if (Number.isFinite(enteredTime) && enteredTime > 0) return THRESHOLD / clamp(enteredTime, 0.1, 10000);
+  return clamp(positiveRate(custom[`${phase}Rate`], fallbackRate), 0.01, 1000);
 }
 
 function actionMetadata() {
@@ -166,9 +174,9 @@ function buildAction(room, unit, request, { queued = false } = {}) {
     const custom = request.customAction || {};
     action.label = String(custom.label || template.label).trim().slice(0, 80) || template.label;
     action.rates = {
-      preparation: positiveRate(custom.preparationRate, 10),
-      execution: positiveRate(custom.executionRate, 20),
-      recovery: positiveRate(custom.recoveryRate, 15),
+      preparation: improvisedPhaseRate(custom, "preparation", 10),
+      execution: improvisedPhaseRate(custom, "execution", 20),
+      recovery: improvisedPhaseRate(custom, "recovery", 15),
     };
     action.risk = {
       preparation: normalizeRisk(custom.preparationRisk, 1),
