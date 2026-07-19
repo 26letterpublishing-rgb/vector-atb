@@ -125,6 +125,7 @@ function actionById(actionId) { return actions().find((entry) => entry.id === ac
 function myUnit() { return state?.units.find((unit) => unit.id === myUnitId) || null; }
 function activeUnit() { return state?.units.find((unit) => unit.id === state?.activeId) || null; }
 function commandFor(unit) { return state?.command?.unitId === unit?.id ? state.command : null; }
+function displayedDecisionRate(unit) { return (Number(unit?.stats?.intellect) + Number(unit?.stats?.initiative)) * 5; }
 function playerVisibleActions() { return actions().filter((entry) => entry.id !== "improvised"); }
 
 function collectEntryData(fields) {
@@ -285,7 +286,7 @@ function unitCardMarkup(unit, { gm = false, player = false } = {}) {
   }
   return `${cardStart}
     <div class="vector-unit-head">
-      <div><div class="unit-name">${escapeHtml(unit.characterName)}</div><div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - DEC ${formatRate(unit.stats.intellect + unit.stats.initiative)} - Move ${unit.moveSpeed}</div></div>
+      <div><div class="unit-name">${escapeHtml(unit.characterName)}</div><div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - DEC ${formatRate(displayedDecisionRate(unit))} - Move ${unit.moveSpeed}</div></div>
       <div class="unit-readout"><strong class="unit-percent">${Math.floor(pct(unit))}%</strong><span class="unit-estimate">${escapeHtml(estimatePhase(unit))}</span></div>
       ${gm ? `<div class="vector-card-tools"><button class="vector-icon-button damage-button" data-action="stagger" data-id="${escapeHtml(unit.id)}" title="Damage / Stagger" aria-label="Apply Stagger"><span class="target-symbol"></span></button>${poiseTool}</div>` : ""}
     </div>

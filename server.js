@@ -117,6 +117,10 @@ function recoveryRate(dexterity, skill, weaponRecovery) {
   return THRESHOLD / duration;
 }
 
+function decisionRate(unit) {
+  return positiveRate((number(unit?.stats?.intellect) + number(unit?.stats?.initiative)) * 5);
+}
+
 function improvisedPhaseRate(custom, phase, fallbackRate) {
   const enteredTime = Number(custom[`${phase}Time`]);
   if (Number.isFinite(enteredTime) && enteredTime > 0) return THRESHOLD / clamp(enteredTime, 0.1, 10000);
@@ -225,7 +229,7 @@ function buildAction(room, unit, request, { queued = false } = {}) {
 function currentPhaseRate(unit) {
   if (!unit) return 0;
   if (unit.phase === "decision") {
-    const rate = positiveRate(unit.stats.intellect + unit.stats.initiative);
+    const rate = decisionRate(unit);
     return unit.decisionBoost ? rate * 2 : rate;
   }
   if (unit.phase === "dumbfounded") return DUMBFOUNDED_RATE;
@@ -894,7 +898,7 @@ async function handleAction(req, res) {
   if (action === "join" || action === "addUnit") {
     const unit = createUnit(body);
     room.units.push(unit);
-    pushLog(room, `${unit.characterName} joined (Decision Rate ${unit.stats.intellect + unit.stats.initiative}, Poise ${unit.poiseMax}).`);
+    pushLog(room, `${unit.characterName} joined (Decision Rate ${decisionRate(unit)}, Poise ${unit.poiseMax}).`);
   } else if (action === "removeUnit") {
     const unit = room.units.find((entry) => entry.id === body.id);
     room.units = room.units.filter((entry) => entry.id !== body.id);
