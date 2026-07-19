@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: spaceship-architect-atb-sync
+    name: vector-atb-sync
     runtime: node
     plan: free
     buildCommand: npm install

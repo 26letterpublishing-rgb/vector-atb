@@ -1,44 +1,33 @@
-# Spaceship Architect ATB Sync Hosting Notes
+# Vector ATB Hosting Notes
 
-This prototype can be hosted online so phones can connect from any network.
+This prototype can be hosted online so the GM and players can connect from phones or computers on different networks.
 
 ## Current Scope
 
-- One shared room per running server.
-- Character Speed only.
-- ATB fills from 0% to 100%.
-- Speed is percent filled per second. Example: Speed 5 fills 5% per second and acts in about 20 seconds.
-- No starships, recovery frames, cooldowns, login accounts, or permanent storage yet.
-- If the hosting service restarts or sleeps, the encounter resets.
+- GM-created four-character room codes.
+- Separate GM and player interfaces.
+- Player reconnect while the room is still active.
+- Real-time Decision, Preparation, Execution, Recovery, Stagger, and Dumbfounded phases.
+- Character-derived action rates, weapon recovery, movement, targeting, action queues, and Poise.
+- In-memory encounter state only. If the server restarts or sleeps, active rooms reset.
 
-## Recommended First Host: Render
+## Deploying on Render
 
-Render is a good first test because this app is a small Node web service.
+1. Put this folder in a GitHub repository.
+2. In Render, choose `New` > `Web Service`.
+3. Connect the GitHub repository.
+4. Leave Root Directory blank when these files are at the repository root. Otherwise enter the folder containing `package.json`.
+5. Use Runtime `Node`.
+6. Use Build Command `npm install`.
+7. Use Start Command `npm start`.
+8. The free instance type is sufficient for a private playtest.
+9. Deploy and share the resulting `onrender.com` address with the players.
 
-High-level steps:
+The GM creates a room and gives its four-character code to the players. Everyone uses the same website address.
 
-1. Put the `sa-atb-multiplayer` folder in a GitHub repository.
-2. Create a Render account.
-3. Choose `New` > `Web Service`.
-4. Connect the GitHub repository.
-5. If Render asks for the root directory, use:
-   `sa-atb-multiplayer`
-6. Use these settings:
-   - Runtime: `Node`
-   - Build Command: `npm install`
-   - Start Command: `npm start`
-7. Deploy.
-8. Render will give you an internet URL ending in `onrender.com`.
+## Current Limitations
 
-Players open that hosted URL on their phones. The GM opens the same URL and chooses GM View.
-
-## Important Limitation
-
-This is not yet a finished Jackbox-style room system. Right now, everyone who opens the hosted URL joins the same shared encounter. That is fine for one private playtest group, but later we should add:
-
-- Real room codes.
-- GM-created rooms.
-- Player reconnect.
-- Basic room passwords.
-- Separate player-private information.
-- A way to recover if the host restarts.
+- No accounts, passwords, or private-room authentication.
+- No permanent encounter storage.
+- A server restart, redeploy, or free-instance sleep clears every room.
+- The server is intended for private playtesting, not public unsupervised use.

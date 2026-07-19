@@ -1,8 +1,8 @@
 {
-  "name": "spaceship-architect-atb-sync",
+  "name": "vector-atb-sync",
   "version": "0.1.0",
   "private": true,
-  "description": "Minimal hosted ATB sync prototype for Spaceship Architect playtesting.",
+  "description": "Hosted real-time ATB encounter prototype for Vector playtesting.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"

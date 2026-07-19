@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vector ATB Sync</title>
-    <link rel="stylesheet" href="styles.css?v=20260714-playtest-base-25" />
+    <link rel="stylesheet" href="styles.css?v=20260718-derived-rates" />
   </head>
   <body>
     <main class="shell">
@@ -56,7 +56,7 @@
       <section id="joinPanel" class="panel join-panel">
         <div>
           <h2>Join Encounter</h2>
-          <p>Enter your names and choose an ATB color. This prototype assumes Base 25 and a 20 second Command Window.</p>
+          <p>Enter the character and equipped weapon used for this encounter.</p>
         </div>
         <label>
           Player Name
@@ -74,32 +74,29 @@
           Character Icon
           <input id="characterIcon" type="file" accept="image/jpeg,image/png" />
         </label>
-        <div class="pc-stat-builder hidden">
-          <div class="stat-board" data-stat="perception">
-            <div class="stat-title">Perception</div>
-            <div class="stat-grid" id="perceptionDiceGrid"></div>
+        <div class="encounter-entry-block">
+          <h3>Attributes</h3>
+          <div class="stat-entry-grid">
+            <label>Intellect<input id="pcIntellect" type="number" min="0" max="20" value="7" /></label>
+            <label>Dexterity<input id="pcDexterity" type="number" min="0" max="20" value="7" /></label>
+            <label>Perception<input id="pcPerception" type="number" min="0" max="20" value="7" /></label>
           </div>
-          <div class="stat-board" data-stat="intellect">
-            <div class="stat-title">Intellect</div>
-            <div class="stat-grid" id="intellectDiceGrid"></div>
+          <h3>Skills</h3>
+          <div class="stat-entry-grid">
+            <label>Initiative<input id="pcInitiative" type="number" min="0" value="7" /></label>
+            <label>Composure<input id="pcComposure" type="number" min="0" value="3" /></label>
+            <label>Firearms<input id="pcFirearms" type="number" min="0" value="7" /></label>
+            <label>Melee<input id="pcMelee" type="number" min="0" value="7" /></label>
+            <label>Dodge<input id="pcDodge" type="number" min="0" value="7" /></label>
           </div>
-          <label>
-            Awareness
-            <input id="awarenessSkill" type="number" min="0" max="20" step="1" value="0" />
-          </label>
-          <label>
-            Initiative
-            <input id="initiativeSkill" type="number" min="0" max="20" step="1" value="0" />
-          </label>
-          <div class="calculated-stats">
-            <div>
-              <span>Speed</span>
-              <strong id="calculatedSpeed">2</strong>
-            </div>
-            <div>
-              <span>Command Window</span>
-              <strong id="calculatedCommand">20 sec</strong>
-            </div>
+          <h3>Equipped Weapon</h3>
+          <div class="weapon-entry-grid">
+            <label>Preparation<input id="pcWeaponPreparation" type="number" min="0.01" step="0.01" value="10" /></label>
+            <label>Prep Risk<select id="pcPreparationRisk"><option value="0">0</option><option value="1" selected>+</option><option value="2">++</option><option value="3">+++</option></select></label>
+            <label>Execution<input id="pcWeaponExecution" type="number" min="0.01" step="0.01" value="20" /></label>
+            <label>Exec Risk<select id="pcExecutionRisk"><option value="0">0</option><option value="1">+</option><option value="2">++</option><option value="3" selected>+++</option></select></label>
+            <label>Recovery<input id="pcWeaponRecovery" type="number" min="0.01" step="0.01" value="15" /></label>
+            <label>Recovery Risk<select id="pcRecoveryRisk"><option value="0">0</option><option value="1">+</option><option value="2" selected>++</option><option value="3">+++</option></select></label>
           </div>
         </div>
         <img class="dice-strip hidden" src="dice-icons-white.png" alt="" aria-hidden="true" />
@@ -133,10 +130,6 @@
             Character / NPC
             <input id="gmCharacterName" placeholder="Security Guard" />
           </label>
-          <label>
-            Base
-            <input id="gmSpeedRating" type="number" min="1" max="30" step="1" value="25" />
-          </label>
           <label id="gmCommandWindowWrap">
             Command Window
             <input id="gmCommandWindow" type="number" min="1" max="999" step="1" value="30" />
@@ -154,6 +147,27 @@
           </label>
           <button id="gmAddUnit">Add</button>
         </div>
+        <details class="gm-character-builder" open>
+          <summary>Character and Weapon Stats</summary>
+          <div class="stat-entry-grid gm-stat-entry-grid">
+            <label>Intellect<input id="gmIntellect" type="number" min="0" max="20" value="7" /></label>
+            <label>Dexterity<input id="gmDexterity" type="number" min="0" max="20" value="7" /></label>
+            <label>Perception<input id="gmPerception" type="number" min="0" max="20" value="7" /></label>
+            <label>Initiative<input id="gmInitiative" type="number" min="0" value="7" /></label>
+            <label>Composure<input id="gmComposure" type="number" min="0" value="3" /></label>
+            <label>Firearms<input id="gmFirearms" type="number" min="0" value="7" /></label>
+            <label>Melee<input id="gmMelee" type="number" min="0" value="7" /></label>
+            <label>Dodge<input id="gmDodge" type="number" min="0" value="7" /></label>
+          </div>
+          <div class="weapon-entry-grid gm-weapon-entry-grid">
+            <label>Weapon Preparation<input id="gmWeaponPreparation" type="number" min="0.01" step="0.01" value="10" /></label>
+            <label>Prep Risk<select id="gmPreparationRisk"><option value="0">0</option><option value="1" selected>+</option><option value="2">++</option><option value="3">+++</option></select></label>
+            <label>Weapon Execution<input id="gmWeaponExecution" type="number" min="0.01" step="0.01" value="20" /></label>
+            <label>Exec Risk<select id="gmExecutionRisk"><option value="0">0</option><option value="1">+</option><option value="2">++</option><option value="3" selected>+++</option></select></label>
+            <label>Weapon Recovery<input id="gmWeaponRecovery" type="number" min="0.01" step="0.01" value="15" /></label>
+            <label>Recovery Risk<select id="gmRecoveryRisk"><option value="0">0</option><option value="1">+</option><option value="2" selected>++</option><option value="3">+++</option></select></label>
+          </div>
+        </details>
         <div class="controls gm-timing-controls">
           <button id="undoLastTiming" class="control-square undo">Undo<br />Timing</button>
           <button id="stepTick" class="control-square">Step<br />1 Sec</button>
@@ -352,10 +366,12 @@
     </section>
 
     <button id="gmPanicPause" class="gm-panic-pause hidden">Pause Everything</button>
-    <button id="visualModeToggle" class="visual-mode-toggle hidden" type="button">Tactical Ring</button>
     <button id="playerPoiseButton" class="player-poise-button hidden" type="button" aria-label="Spend Poise">
       <span>Poise</span>
       <strong id="playerPoiseCount">3</strong>
+    </button>
+    <button id="playerQueueButton" class="player-queue-button hidden" type="button" aria-label="Queue actions">
+      <span>Queue</span><strong id="playerQueueCount">0/2</strong>
     </button>
 
     <section id="staggerDialog" class="vector-modal hidden" role="dialog" aria-modal="true" aria-labelledby="staggerDialogTitle">
@@ -366,7 +382,7 @@
         <label class="vector-modal-field">
           Stagger Time
           <span class="number-with-unit">
-            <input id="staggerDuration" type="number" min="0.5" max="120" step="0.5" value="5" inputmode="decimal" />
+          <input id="staggerDuration" type="number" min="0.1" max="3600" step="0.1" value="5" inputmode="decimal" />
             <small>seconds</small>
           </span>
         </label>
@@ -380,25 +396,58 @@
     <section id="poiseDialog" class="vector-modal hidden" role="dialog" aria-modal="true" aria-labelledby="poiseDialogTitle">
       <div class="vector-modal-panel poise-panel">
         <p class="eyebrow">Poise</p>
-        <h2 id="poiseDialogTitle">Spend a Poise Point</h2>
+        <h2 id="poiseDialogTitle">Poise</h2>
         <p id="poiseDialogTarget" class="vector-modal-target">Character</p>
-        <div class="poise-choice-list">
-          <button id="poiseBrace" type="button" data-poise-use="brace">
-            <strong>Brace</strong>
-            <small>Ignore new Stagger until your next Decision fills.</small>
-          </button>
-          <button id="poiseSnapBack" type="button" data-poise-use="snapBack">
-            <strong>Snap Back</strong>
-            <small>Void your current state and begin Decision at twice normal speed.</small>
-          </button>
-          <button id="poiseOvercommit" type="button" data-poise-use="overcommit">
-            <strong>Overcommit</strong>
-            <small>Increase damage, then halve Recovery speed.</small>
-          </button>
-        </div>
+        <div id="poiseChoiceList" class="poise-choice-list"></div>
         <div class="vector-modal-actions">
           <button id="cancelPoise" type="button" class="secondary">Cancel</button>
         </div>
+      </div>
+    </section>
+
+    <section id="staggerResponseDialog" class="vector-modal hidden" role="dialog" aria-modal="true" aria-labelledby="staggerResponseTitle">
+      <div class="vector-modal-panel">
+        <p class="eyebrow">Incoming Stagger</p>
+        <h2 id="staggerResponseTitle">Take the hit?</h2>
+        <p id="staggerResponseText" class="vector-modal-target"></p>
+        <div class="vector-modal-actions">
+          <button id="continueStagger" type="button" class="danger">Continue</button>
+          <button id="ignoreStagger" type="button" class="complete">Ignore with 1 Poise</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="actionConfigDialog" class="vector-modal hidden" role="dialog" aria-modal="true" aria-labelledby="actionConfigTitle">
+      <div class="vector-modal-panel action-config-panel">
+        <p id="actionConfigEyebrow" class="eyebrow">Configure Action</p>
+        <h2 id="actionConfigTitle">Action</h2>
+        <label id="actionTargetWrap" class="vector-modal-field hidden">Target<select id="actionTarget"></select></label>
+        <label id="actionOtherTargetWrap" class="vector-modal-field hidden">Other Character<select id="actionOtherTarget"></select></label>
+        <label id="actionDistanceWrap" class="vector-modal-field hidden">Distance<input id="actionDistance" type="number" min="0.01" step="0.01" value="1" inputmode="decimal" /></label>
+        <div id="improvisedFields" class="improvised-fields hidden">
+          <label>Action Name<input id="improvisedName" maxlength="80" value="Improvised Action" /></label>
+          <label>Preparation Rate<input id="improvisedPreparation" type="number" min="0.01" step="0.01" value="10" /></label>
+          <label>Preparation Risk<select id="improvisedPreparationRisk"><option value="0">0</option><option value="1" selected>+</option><option value="2">++</option><option value="3">+++</option></select></label>
+          <label>Execution Rate<input id="improvisedExecution" type="number" min="0.01" step="0.01" value="20" /></label>
+          <label>Execution Risk<select id="improvisedExecutionRisk"><option value="0">0</option><option value="1">+</option><option value="2">++</option><option value="3" selected>+++</option></select></label>
+          <label>Recovery Rate<input id="improvisedRecovery" type="number" min="0.01" step="0.01" value="15" /></label>
+          <label>Recovery Risk<select id="improvisedRecoveryRisk"><option value="0">0</option><option value="1">+</option><option value="2" selected>++</option><option value="3">+++</option></select></label>
+        </div>
+        <div class="vector-modal-actions">
+          <button id="cancelActionConfig" type="button" class="secondary">Cancel</button>
+          <button id="confirmActionConfig" type="button" class="complete">Confirm</button>
+        </div>
+      </div>
+    </section>
+
+    <section id="queueDialog" class="vector-modal hidden" role="dialog" aria-modal="true" aria-labelledby="queueDialogTitle">
+      <div class="vector-modal-panel queue-panel">
+        <p class="eyebrow">Automatic Actions</p>
+        <h2 id="queueDialogTitle">Action Queue</h2>
+        <div id="queuedActionList" class="queued-action-list"></div>
+        <p class="queue-note">Queued actions trigger when Decision fills and gain +1 Preparation Rate.</p>
+        <div id="queueActionChoices" class="queue-action-choices"></div>
+        <div class="vector-modal-actions"><button id="closeQueueDialog" type="button" class="secondary">Close</button></div>
       </div>
     </section>
 
@@ -410,6 +459,6 @@
       <div id="playerActionChoices" class="action-choice-grid"></div>
     </div>
 
-    <script src="app.js?v=20260714-playtest-base-25"></script>
+    <script src="app.js?v=20260718-derived-rates"></script>
   </body>
 </html>

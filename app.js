@@ -6,269 +6,102 @@ let alertsEnabled = localStorage.getItem("vector-atb-alerts") === "on";
 let gmSoundsMuted = localStorage.getItem("vector-atb-gm-muted") === "on";
 let events = null;
 let audioContext = null;
-const combatStartAudio = new Audio("vector-combat-intro.mp4");
-combatStartAudio.preload = "auto";
 let lastNotifiedActiveId = "";
-let lastCommandWarningKey = "";
 let lastInterruptedNotice = "";
 let lastGmClockClickAt = 0;
+let playerFocusWasActive = false;
 let playerActionRequestPending = false;
-let playerActionPointer = null;
-let lastPlayerPointerActivationAt = Number.NEGATIVE_INFINITY;
-
-const DEFAULT_BASELINE = 25;
-const DEFAULT_COMMAND_WINDOW = 20;
-const KEEP_ALIVE_MS = 30000;
-
-const actionFallbacks = [
-  {
-    id: "move",
-    label: "Moving Position",
-    speed: { preparation: 1, execution: 2, recovery: 1 },
-    risk: { preparation: 0, execution: 1, recovery: 0 },
-    hitBonus: null,
-    damage: "",
-    critical: "",
-    damageType: "",
-    hasResolution: false,
-    notes: "Change position when execution completes.",
-  },
-  {
-    id: "use_item",
-    label: "Using Item",
-    speed: { preparation: 0, execution: 0, recovery: 1 },
-    risk: { preparation: 1, execution: 2, recovery: 1 },
-    hitBonus: null,
-    damage: "",
-    critical: "",
-    damageType: "",
-    hasResolution: true,
-    notes: "Resolve item effect at execution completion.",
-  },
-  {
-    id: "defense",
-    label: "Defense",
-    speed: { preparation: 1, execution: 0, recovery: 1 },
-    risk: { preparation: -3, execution: -5, recovery: -3 },
-    hitBonus: null,
-    damage: "",
-    critical: "",
-    damageType: "",
-    hasResolution: false,
-    notes: "Negative risk improves defense.",
-  },
-  {
-    id: "melee_attack",
-    label: "Melee Attack",
-    speed: { preparation: 0, execution: 2, recovery: -1 },
-    risk: { preparation: 1, execution: 3, recovery: 2 },
-    hitBonus: 3,
-    damage: "4d8",
-    critical: "x1.5",
-    damageType: "cutting",
-    hasResolution: true,
-    notes: "Resolve to-hit and damage at execution completion.",
-  },
-  {
-    id: "fire_gun",
-    label: "Firing Gun",
-    speed: { preparation: 1, execution: 2, recovery: 0 },
-    risk: { preparation: 0, execution: 2, recovery: 1 },
-    hitBonus: 2,
-    damage: "2d8",
-    critical: "x1.5",
-    damageType: "ballistic",
-    hasResolution: true,
-    notes: "Ammo tracking comes later.",
-  },
-  {
-    id: "close_quarter",
-    label: "Close Quarter Action",
-    speed: { preparation: -1, execution: 0, recovery: -1 },
-    risk: { preparation: 2, execution: 3, recovery: 3 },
-    hitBonus: 1,
-    damage: "2d6 / effect",
-    critical: "GM call",
-    damageType: "blunt/control",
-    hasResolution: true,
-    notes: "Wrestle, tackle, disarm, restrain, or restrain.",
-  },
-  {
-    id: "reload_ready",
-    label: "Reloading / Readying Weapon",
-    speed: { preparation: 0, execution: 0, recovery: 1 },
-    risk: { preparation: 1, execution: 2, recovery: 1 },
-    hitBonus: null,
-    damage: "",
-    critical: "",
-    damageType: "",
-    hasResolution: false,
-    notes: "Reload, draw, ready, clear jam, or swap weapon.",
-  },
-  {
-    id: "improvised",
-    label: "Improvised Action",
-    speed: { preparation: 0, execution: 0, recovery: 0 },
-    risk: { preparation: 0, execution: 0, recovery: 0 },
-    hitBonus: null,
-    damage: "GM call",
-    critical: "GM call",
-    damageType: "GM call",
-    hasResolution: true,
-    notes: "Fallback action. GM may override values.",
-  },
-];
-
-let npcDefaultBag = [];
-let currentNpcDefault = null;
-
-const npcDefaults = [
-  { characterName: "Security Guard", baseline: 22, color: "#39e58f" },
-  { characterName: "Street Tough", baseline: 23, color: "#f07a4a" },
-  { characterName: "Corporate Agent", baseline: 26, color: "#35b7ff" },
-  { characterName: "Civilian", baseline: 20, color: "#f2d16b" },
-  { characterName: "Drone Handler", baseline: 25, color: "#20f5d0" },
-  { characterName: "Police Exo", baseline: 27, color: "#ff5fa2" },
-  { characterName: "Fast Operative", baseline: 29, color: "#a65cff" },
-  { characterName: "Heavy Enforcer", baseline: 18, color: "#ff3d55" },
-  { characterName: "Vector Anomaly", baseline: 30, color: "#8bd7ff" },
-];
-
-function $(selector) {
-  return document.querySelector(selector);
-}
-
-const roomCode = $("#roomCode");
-const connectionStatus = $("#connectionStatus");
-const welcomePanel = $("#welcomePanel");
-const createRoom = $("#createRoom");
-const showJoinRoom = $("#showJoinRoom");
-const roomJoinPanel = $("#roomJoinPanel");
-const joinRoomCode = $("#joinRoomCode");
-const confirmJoinRoom = $("#confirmJoinRoom");
-const backToWelcome = $("#backToWelcome");
-const topbar = $("#topbar");
-const joinPanel = $("#joinPanel");
-const gmPanel = $("#gmPanel");
-const gmTopControls = $("#gmTopControls");
-const playerTopControls = $("#playerTopControls");
-const playerPanel = $("#playerPanel");
-const playerName = $("#playerName");
-const characterName = $("#characterName");
-const playerColor = $("#playerColor");
-const calculatedSpeed = $("#calculatedSpeed");
-const calculatedCommand = $("#calculatedCommand");
-const joinPlayer = $("#joinPlayer");
-const openGm = $("#openGm");
-const rejoinBlock = $("#rejoinBlock");
-const rejoinSelect = $("#rejoinSelect");
-const rejoinPlayer = $("#rejoinPlayer");
-const stepTick = $("#stepTick");
-const resetAll = $("#resetAll");
-const clearEncounter = $("#clearEncounter");
-const undoLastTiming = $("#undoLastTiming");
-const exitCombat = $("#exitCombat");
-const gmMuteSound = $("#gmMuteSound");
-const gmAddUnit = $("#gmAddUnit");
-const gmPlayerName = $("#gmPlayerName");
-const gmCharacterName = $("#gmCharacterName");
-const gmSpeedRating = $("#gmSpeedRating");
-const gmCommandWindow = $("#gmCommandWindow");
-const gmCommandWindowWrap = $("#gmCommandWindowWrap");
-const gmColor = $("#gmColor");
-const gmTeam = $("#gmTeam");
-const unitList = $("#unitList");
-const initiativePanel = $("#initiativePanel");
-const logPanel = $("#logPanel");
-const readyCount = $("#readyCount");
-const clockState = $("#clockState");
-const myTurnBanner = $("#myTurnBanner");
-const playerTurnTitle = $("#playerTurnTitle");
-const playerTurnActions = $("#playerTurnActions");
-const playerRoomCode = $("#playerRoomCode");
-const playerCommandDial = $("#playerCommandDial");
-const playerCommandTime = $("#playerCommandTime");
-const playerCommandStatus = $("#playerCommandStatus");
-const enableAlerts = $("#enableAlerts");
-const playerLogButton = $("#playerLogButton");
-const leaveRoom = $("#leaveRoom");
-const myUnitCard = $("#myUnitCard");
-const playerFocusScreen = $("#playerFocusScreen");
-const playerFocusEyebrow = $("#playerFocusEyebrow");
-const playerFocusCharacter = $("#playerFocusCharacter");
-const playerFocusLogButton = $("#playerFocusLogButton");
-const playerFocusRoomCode = $("#playerFocusRoomCode");
-const playerDecisionView = $("#playerDecisionView");
-const playerFocusTimer = $("#playerFocusTimer");
-const playerFocusCommandTime = $("#playerFocusCommandTime");
-const playerFocusPrompt = $("#playerFocusPrompt");
-const playerCommandTrackFill = $("#playerCommandTrackFill");
-const playerFocusActions = $("#playerFocusActions");
-const playerResolutionView = $("#playerResolutionView");
-const playerResolutionAction = $("#playerResolutionAction");
-const playerResolutionStatus = $("#playerResolutionStatus");
-const playerLogDrawer = $("#playerLogDrawer");
-const playerLogCommand = $("#playerLogCommand");
-const playerLogCommandTime = $("#playerLogCommandTime");
-const playerLogList = $("#playerLogList");
-const closePlayerLog = $("#closePlayerLog");
-const activePanel = $("#activePanel");
-const activeKicker = $("#activeKicker");
-const activeTitle = $("#activeTitle");
-const activeMeta = $("#activeMeta");
-const logList = $("#logList");
-const turnDialog = $("#turnDialog");
-const turnDialogKicker = $("#turnDialogKicker");
-const activeName = $("#activeName");
-const activeOwner = $("#activeOwner");
-const completeTurn = $("#completeTurn");
-const gmDelay = $("#gmDelay");
-const delayDialog = $("#delayDialog");
-const queuedEffectDialog = $("#queuedEffectDialog");
-const gmPanicPause = $("#gmPanicPause");
-const visualModeToggle = $("#visualModeToggle");
-const playerActionSheet = $("#playerActionSheet");
-const playerPoiseButton = $("#playerPoiseButton");
-const playerPoiseCount = $("#playerPoiseCount");
-const staggerDialog = $("#staggerDialog");
-const staggerDialogTarget = $("#staggerDialogTarget");
-const staggerDuration = $("#staggerDuration");
-const cancelStagger = $("#cancelStagger");
-const confirmStagger = $("#confirmStagger");
-const poiseDialog = $("#poiseDialog");
-const poiseDialogTarget = $("#poiseDialogTarget");
-const poiseBrace = $("#poiseBrace");
-const poiseSnapBack = $("#poiseSnapBack");
-const poiseOvercommit = $("#poiseOvercommit");
-const cancelPoise = $("#cancelPoise");
-
+let actionConfigContext = null;
 let staggerTargetId = "";
 let poiseTargetId = "";
 
+const DEFAULT_COMMAND_WINDOW = 20;
+const KEEP_ALIVE_MS = 30000;
+const combatStartAudio = new Audio("vector-combat-intro.mp4");
+combatStartAudio.preload = "auto";
+
+const actionFallbacks = [
+  { id: "move", label: "Move", kind: "move", targetMode: "none" },
+  { id: "use_item", label: "Use Item", kind: "item", targetMode: "optional" },
+  { id: "defense", label: "Defense", kind: "standard", targetMode: "none" },
+  { id: "melee_attack", label: "Melee Attack", kind: "attack", targetMode: "required" },
+  { id: "fire_gun", label: "Fire Gun", kind: "attack", targetMode: "required" },
+  { id: "close_quarter", label: "Close Quarter Action", kind: "attack", targetMode: "required" },
+  { id: "reload_ready", label: "Reload / Ready", kind: "standard", targetMode: "none" },
+  { id: "improvised", label: "Improvised Action", kind: "improvised", targetMode: "optional" },
+];
+
+const npcDefaults = [
+  { characterName: "Security Guard", color: "#39e58f", stats: [7, 7, 7, 7, 3, 7, 6, 6] },
+  { characterName: "Street Tough", color: "#f07a4a", stats: [5, 8, 5, 6, 4, 3, 8, 5] },
+  { characterName: "Corporate Agent", color: "#35b7ff", stats: [9, 8, 10, 9, 5, 8, 5, 7] },
+  { characterName: "Civilian", color: "#f2d16b", stats: [5, 5, 5, 4, 1, 2, 2, 3] },
+  { characterName: "Drone Handler", color: "#20f5d0", stats: [9, 6, 9, 8, 4, 8, 3, 5] },
+  { characterName: "Police Exo", color: "#ff5fa2", stats: [7, 10, 8, 8, 6, 9, 8, 8] },
+  { characterName: "Fast Operative", color: "#a65cff", stats: [8, 13, 10, 10, 6, 10, 9, 11] },
+  { characterName: "Heavy Enforcer", color: "#ff3d55", stats: [5, 6, 6, 5, 7, 8, 9, 5] },
+  { characterName: "Vector Anomaly", color: "#8bd7ff", stats: [12, 11, 13, 12, 8, 10, 10, 10] },
+];
+let npcDefaultBag = [];
+let currentNpcDefault = null;
+
+function $(selector) { return document.querySelector(selector); }
+function $all(selector) { return [...document.querySelectorAll(selector)]; }
+
+const elements = Object.fromEntries(
+  "roomCode connectionStatus welcomePanel createRoom showJoinRoom roomJoinPanel joinRoomCode confirmJoinRoom backToWelcome topbar joinPanel gmPanel gmTopControls playerTopControls playerPanel playerName characterName playerColor joinPlayer openGm rejoinBlock rejoinSelect rejoinPlayer stepTick resetAll clearEncounter undoLastTiming exitCombat gmMuteSound gmAddUnit gmPlayerName gmCharacterName gmCommandWindow gmCommandWindowWrap gmColor gmTeam unitList initiativePanel logPanel readyCount clockState myTurnBanner playerTurnActions playerRoomCode enableAlerts playerLogButton leaveRoom playerFocusScreen playerFocusEyebrow playerFocusCharacter playerFocusLogButton playerFocusRoomCode playerDecisionView playerFocusTimer playerFocusCommandTime playerFocusPrompt playerCommandTrackFill playerFocusActions playerResolutionView playerResolutionAction playerResolutionStatus playerLogDrawer playerLogCommand playerLogCommandTime playerLogList closePlayerLog activePanel activeKicker activeTitle activeMeta logList turnDialog turnDialogKicker activeName activeOwner completeTurn gmDelay gmPanicPause playerPoiseButton playerPoiseCount playerQueueButton playerQueueCount staggerDialog staggerDialogTarget staggerDuration cancelStagger confirmStagger poiseDialog poiseDialogTarget poiseChoiceList cancelPoise staggerResponseDialog staggerResponseTitle staggerResponseText continueStagger ignoreStagger actionConfigDialog actionConfigEyebrow actionConfigTitle actionTargetWrap actionTarget actionOtherTargetWrap actionOtherTarget actionDistanceWrap actionDistance improvisedFields improvisedName improvisedPreparation improvisedPreparationRisk improvisedExecution improvisedExecutionRisk improvisedRecovery improvisedRecoveryRisk cancelActionConfig confirmActionConfig queueDialog queuedActionList queueActionChoices closeQueueDialog".split(" ").map((id) => [id, $(`#${id}`)])
+);
+
+const pcFields = {
+  stats: { intellect: "pcIntellect", dexterity: "pcDexterity", perception: "pcPerception", initiative: "pcInitiative", composure: "pcComposure", firearms: "pcFirearms", melee: "pcMelee", dodge: "pcDodge" },
+  weapon: { preparation: "pcWeaponPreparation", execution: "pcWeaponExecution", recovery: "pcWeaponRecovery", preparationRisk: "pcPreparationRisk", executionRisk: "pcExecutionRisk", recoveryRisk: "pcRecoveryRisk" },
+};
+const gmFields = {
+  stats: { intellect: "gmIntellect", dexterity: "gmDexterity", perception: "gmPerception", initiative: "gmInitiative", composure: "gmComposure", firearms: "gmFirearms", melee: "gmMelee", dodge: "gmDodge" },
+  weapon: { preparation: "gmWeaponPreparation", execution: "gmWeaponExecution", recovery: "gmWeaponRecovery", preparationRisk: "gmPreparationRisk", executionRisk: "gmExecutionRisk", recoveryRisk: "gmRecoveryRisk" },
+};
+
 function safeLocalStorageSet(key, value) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // Storage can fail in private browsing; the app still works for the current tab.
-  }
+  try { localStorage.setItem(key, value); } catch { /* The current tab still works. */ }
 }
 
 function escapeHtml(value) {
-  return String(value ?? "").replace(/[&<>"']/g, (char) => {
-    return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char];
-  });
+  return String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[char]));
 }
 
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
+function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+function numberValue(id, fallback = 0) { const value = Number($(`#${id}`)?.value); return Number.isFinite(value) ? value : fallback; }
+function mark(value) { const count = clamp(Math.round(Number(value) || 0), 0, 3); return count ? "+".repeat(count) : "0"; }
+function pct(unit) { return clamp(Number(unit?.phaseProgress) || 0, 0, 100); }
+function formatRate(value) { const number = Number(value) || 0; return Number.isInteger(number) ? String(number) : number.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""); }
+function formatSecondsValue(seconds) { if (!Number.isFinite(seconds)) return "--"; if (seconds < 10) return `${Math.max(0, seconds).toFixed(2)}s`; return `${Math.max(0, seconds).toFixed(1)}s`; }
+function formatClock(seconds) { const total = Math.max(0, Math.ceil(Number(seconds) || 0)); return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`; }
+
+function actions() { return Array.isArray(state?.actions) && state.actions.length ? state.actions : actionFallbacks; }
+function actionById(actionId) { return actions().find((entry) => entry.id === actionId) || actionFallbacks.at(-1); }
+function myUnit() { return state?.units.find((unit) => unit.id === myUnitId) || null; }
+function activeUnit() { return state?.units.find((unit) => unit.id === state?.activeId) || null; }
+function commandFor(unit) { return state?.command?.unitId === unit?.id ? state.command : null; }
+function playerVisibleActions() { return actions().filter((entry) => entry.id !== "improvised"); }
+
+function collectEntryData(fields) {
+  const stats = Object.fromEntries(Object.entries(fields.stats).map(([key, id]) => [key, numberValue(id, key === "composure" ? 3 : 7)]));
+  const weapon = {
+    preparation: numberValue(fields.weapon.preparation, 10),
+    execution: numberValue(fields.weapon.execution, 20),
+    recovery: numberValue(fields.weapon.recovery, 15),
+    risk: {
+      preparation: numberValue(fields.weapon.preparationRisk, 1),
+      execution: numberValue(fields.weapon.executionRisk, 3),
+      recovery: numberValue(fields.weapon.recoveryRisk, 2),
+    },
+  };
+  return { stats, weapon };
 }
 
-function actions() {
-  return Array.isArray(state?.actions) && state.actions.length ? state.actions : actionFallbacks;
-}
-
-function actionById(actionId) {
-  return actions().find((entry) => entry.id === actionId) || actionFallbacks[actionFallbacks.length - 1];
+function setEntryData(fields, stats) {
+  const keys = Object.keys(fields.stats);
+  keys.forEach((key, index) => { const input = $(`#${fields.stats[key]}`); if (input) input.value = stats[index]; });
 }
 
 function shuffleNpcDefaultBag() {
@@ -286,798 +119,23 @@ function nextNpcDefault() {
 }
 
 function applyNpcDefaultPreview({ force = false } = {}) {
-  if (!gmTeam || gmTeam.value !== "npc") return;
+  if (elements.gmTeam?.value !== "npc") return;
   const preview = currentNpcDefault || nextNpcDefault();
-  if (force || !gmCharacterName.value.trim()) gmCharacterName.value = preview.characterName;
-  if (force || !gmSpeedRating.value.trim() || gmSpeedRating.value === String(DEFAULT_BASELINE)) gmSpeedRating.value = preview.baseline;
-  if (force || !gmColor.value) gmColor.value = preview.color;
+  if (force || !elements.gmCharacterName.value.trim()) elements.gmCharacterName.value = preview.characterName;
+  if (force || !elements.gmColor.value) elements.gmColor.value = preview.color;
+  if (force) setEntryData(gmFields, preview.stats);
 }
 
-function mark(value) {
-  const step = Math.round(Number(value) || 0);
-  if (step === 0) return "0";
-  const char = step > 0 ? "+" : "-";
-  return char.repeat(Math.abs(step));
+function setConnected(connected, text = "") {
+  elements.connectionStatus.classList.toggle("ok", connected);
+  elements.connectionStatus.textContent = text || (connected ? `Connected to room ${currentRoomCode}.` : "Connecting to the ATB room server...");
 }
 
-function signedNumber(value) {
-  if (value === null || value === undefined || value === "") return "";
-  const number = Number(value) || 0;
-  return `${number >= 0 ? "+" : ""}${number}`;
-}
-
-function pct(unit) {
-  return `${Math.max(0, Math.min(100, Number(unit?.phaseProgress) || 0))}%`;
-}
-
-function formatRate(value) {
-  const number = Number(value) || 0;
-  return Number.isInteger(number) ? String(number) : number.toFixed(1);
-}
-
-function formatSeconds(seconds) {
-  if (!Number.isFinite(seconds)) return "--:--";
-  const total = Math.max(0, Math.ceil(seconds));
-  const mins = Math.floor(total / 60);
-  const secs = total % 60;
-  return `${String(mins).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
-}
-
-function commandFor(unit) {
-  return state?.command?.unitId === unit?.id ? state.command : null;
-}
-
-function commandPercent(command) {
-  if (!command || !command.total) return 0;
-  return Math.max(0, Math.min(100, (command.remaining / command.total) * 100));
-}
-
-function phaseLabel(unit) {
-  const phase = unit?.phase || "decision";
-  if (phase === "decision") return "DECISION";
-  if (phase === "preparation") return "PREPARATION";
-  if (phase === "execution") return "EXECUTION";
-  if (phase === "recovery") return "RECOVERY";
-  if (phase === "stagger") return "STAGGER";
-  if (phase === "dumbfounded") return "DUMBFOUNDED!";
-  return phase.toUpperCase();
-}
-
-function actionLabel(unit) {
-  if (state?.activeId === unit?.id) return "Choose Action";
-  if (state?.activeAction?.unitId === unit?.id) return state.activeAction.label;
-  if (unit?.phase === "stagger") return "Action Voided";
-  return unit?.currentAction?.label || "Reading Battlefield";
-}
-
-function phaseVerb(unit) {
-  if (state?.activeId === unit?.id) return "Decision frozen";
-  if (state?.activeAction?.unitId === unit?.id) return "Waiting for resolution";
-  if (unit?.phase === "decision") return unit.decisionBoost ? "Boosted decision" : "Building decision";
-  if (unit?.phase === "preparation") return "Preparing";
-  if (unit?.phase === "execution") return "Executing";
-  if (unit?.phase === "recovery") return "Recovering";
-  if (unit?.phase === "stagger") return "Staggered by damage";
-  if (unit?.phase === "dumbfounded") return "Losing time";
-  return "Standing by";
-}
-
-function currentRiskText(unit) {
-  const risk = Number(unit?.currentRisk) || 0;
-  return mark(risk);
-}
-
-function currentRiskLabel(unit) {
-  const risk = Number(unit?.currentRisk) || 0;
-  if (risk === 0) return "Risk 0";
-  if (risk < 0) return `Risk ${mark(risk)} / Defense bonus`;
-  return `Risk ${mark(risk)} / Defense penalty`;
-}
-
-function estimatePhase(unit) {
-  if (!unit) return "";
-  if (state?.activeId === unit.id) {
-    const command = commandFor(unit);
-    return command ? `${formatSeconds(command.remaining)} Command Window` : "Choose action";
-  }
-  if (state?.activeAction?.unitId === unit.id) return "Resolution paused";
-  const rate = Number(unit.phaseRate) || 0;
-  if (!rate) return "Paused";
-  const progress = Number(unit.phaseProgress) || 0;
-  const direction = unit.phaseDirection;
-  const remaining = direction === "down" ? progress : 100 - progress;
-  return `${formatSeconds(remaining / rate)} at ${formatRate(rate)}/sec`;
-}
-
-function actionSummary(action) {
-  const hit = action.hitBonus === null || action.hitBonus === undefined ? "" : ` Hit ${signedNumber(action.hitBonus)}`;
-  const damage = action.damage ? ` ${action.damage}${action.damageType ? ` ${action.damageType}` : ""}` : "";
-  return `SPD P${mark(action.speed.preparation)} E${mark(action.speed.execution)} R${mark(action.speed.recovery)} | RISK P${mark(action.risk.preparation)} E${mark(action.risk.execution)} R${mark(action.risk.recovery)}${hit}${damage}`;
-}
-
-function actionButtonsMarkup(unit, { compact = false } = {}) {
-  if (!unit || state?.activeId !== unit.id || state?.activeAction) return "";
-  return `
-    <div class="vector-action-grid ${compact ? "compact" : ""}" data-action-unit="${escapeHtml(unit.id)}">
-      ${actions().map((action) => `
-        <button type="button" class="vector-action-button" data-action-id="${escapeHtml(action.id)}" title="${escapeHtml(action.notes || "")}">
-          <strong>${escapeHtml(action.id === "reload_ready" ? "Reload / Ready" : action.label)}</strong>
-          <small>${escapeHtml(actionSummary(action))}</small>
-        </button>
-      `).join("")}
-    </div>
-  `;
-}
-
-function playerActionLabel(action) {
-  return {
-    move: "Move",
-    use_item: "Use Item",
-    defense: "Defense",
-    melee_attack: "Melee Attack",
-    fire_gun: "Fire Gun",
-    close_quarter: "Close Quarters",
-    reload_ready: "Reload / Ready",
-    improvised: "Improvised",
-  }[action.id] || action.label;
-}
-
-function playerActionButtonsMarkup(unit) {
-  if (!unit || state?.activeId !== unit.id || state?.activeAction) return "";
-  return actions().map((action, index) => `
-    <button type="button" class="player-action-choice action-${escapeHtml(action.id)}" data-action-id="${escapeHtml(action.id)}" data-index="${String(index + 1).padStart(2, "0")}">
-      <span>${escapeHtml(playerActionLabel(action))}</span>
-    </button>
-  `).join("");
-}
-
-function maybeImprovisedAction(actionId) {
-  if (actionId !== "improvised" || mode !== "gm") return null;
-  const base = actionById("improvised");
-  const label = prompt("Improvised action name", base.label);
-  if (label === null) return false;
-  const prepSpeed = prompt("Preparation speed modifier (-4 to +4)", "0");
-  if (prepSpeed === null) return false;
-  const execSpeed = prompt("Execution speed modifier (-4 to +4)", "0");
-  if (execSpeed === null) return false;
-  const recoverySpeed = prompt("Recovery speed modifier (-4 to +4)", "0");
-  if (recoverySpeed === null) return false;
-  const prepRisk = prompt("Preparation risk (-5 to +5)", "0");
-  if (prepRisk === null) return false;
-  const execRisk = prompt("Execution risk (-5 to +5)", "0");
-  if (execRisk === null) return false;
-  const recoveryRisk = prompt("Recovery risk (-5 to +5)", "0");
-  if (recoveryRisk === null) return false;
-  const hasResolution = confirm("Should this action pause at Execution completion for resolution?");
-  const hitBonus = prompt("To-Hit bonus, blank for none", "");
-  if (hitBonus === null) return false;
-  const damage = prompt("Damage / effect text", "GM call");
-  if (damage === null) return false;
-  return {
-    ...base,
-    label,
-    speed: {
-      preparation: clamp(Math.round(Number(prepSpeed) || 0), -4, 4),
-      execution: clamp(Math.round(Number(execSpeed) || 0), -4, 4),
-      recovery: clamp(Math.round(Number(recoverySpeed) || 0), -4, 4),
-    },
-    risk: {
-      preparation: clamp(Math.round(Number(prepRisk) || 0), -5, 5),
-      execution: clamp(Math.round(Number(execRisk) || 0), -5, 5),
-      recovery: clamp(Math.round(Number(recoveryRisk) || 0), -5, 5),
-    },
-    hitBonus: hitBonus.trim() === "" ? null : clamp(Math.round(Number(hitBonus) || 0), -99, 99),
-    damage,
-    hasResolution,
-    notes: "GM improvised action.",
-  };
-}
-
-async function chooseAction(unitId, actionId) {
-  const unit = state?.units.find((entry) => entry.id === unitId);
-  if (mode === "gm" && unit?.controlledBy === "player") return;
-  const customAction = maybeImprovisedAction(actionId);
-  if (customAction === false) return;
-  await action({
-    action: "chooseAction",
-    id: unitId,
-    actionId,
-    customAction,
-  }, "start");
-}
-
-function resetPlayerActionSubmission() {
-  playerActionRequestPending = false;
-  playerFocusActions.removeAttribute("aria-busy");
-  for (const choice of playerFocusActions.querySelectorAll("button[data-action-id]")) {
-    choice.disabled = false;
-    choice.classList.remove("is-pending");
-    choice.removeAttribute("aria-disabled");
-  }
-}
-
-function bindReliableTap(button, activate) {
-  let pointer = null;
-  let lastPointerActivationAt = Number.NEGATIVE_INFINITY;
-
-  button.addEventListener("pointerdown", (event) => {
-    if (button.disabled || !event.isPrimary || !["touch", "pen"].includes(event.pointerType)) return;
-    pointer = { id: event.pointerId, x: event.clientX, y: event.clientY };
-  });
-
-  button.addEventListener("pointercancel", (event) => {
-    if (pointer?.id === event.pointerId) pointer = null;
-  });
-
-  button.addEventListener("pointerup", (event) => {
-    const activePointer = pointer;
-    if (!activePointer || activePointer.id !== event.pointerId) return;
-    pointer = null;
-
-    const moved = Math.hypot(event.clientX - activePointer.x, event.clientY - activePointer.y);
-    if (moved > 16 || !button.contains(event.target)) return;
-
-    event.preventDefault();
-    lastPointerActivationAt = performance.now();
-    activate(event);
-  });
-
-  button.addEventListener("click", (event) => {
-    if (button.disabled || performance.now() - lastPointerActivationAt < 750) return;
-    activate(event);
-  });
-}
-
-async function submitPlayerAction(button) {
-  if (!button || !myUnitId || playerActionRequestPending) return;
-  if (state?.activeId !== myUnitId || state?.activeAction) return;
-
-  const actionId = button.dataset.actionId;
-  if (!actionId) return;
-
-  const unitId = myUnitId;
-  playerActionRequestPending = true;
-  playerFocusActions.setAttribute("aria-busy", "true");
-  playerFocusPrompt.textContent = "Locking action";
-
-  for (const choice of playerFocusActions.querySelectorAll("button[data-action-id]")) {
-    const selected = choice === button;
-    choice.disabled = true;
-    choice.classList.toggle("is-pending", selected);
-    choice.setAttribute("aria-disabled", "true");
-  }
-
-  try {
-    await chooseAction(unitId, actionId);
-  } finally {
-    playerActionRequestPending = false;
-    if (state?.activeId === unitId && !state?.activeAction) {
-      resetPlayerActionSubmission();
-      const command = commandFor(state.units.find((unit) => unit.id === unitId));
-      playerFocusPrompt.textContent = command?.expired ? "Choose now" : "Choose one action";
-    }
-  }
-}
-
-function barStyle(unit) {
-  const color = unit?.color || "#39e58f";
-  const rgb = hexToRgb(color);
-  return `--bar:${color};--bar-rgb:${rgb.r},${rgb.g},${rgb.b};`;
-}
-
-function hexToRgb(hex) {
-  const clean = String(hex || "#39e58f").replace("#", "");
-  const number = parseInt(clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean, 16);
-  return {
-    r: (number >> 16) & 255,
-    g: (number >> 8) & 255,
-    b: number & 255,
-  };
-}
-
-function unitSignature(unit, { gm = false, player = false } = {}) {
-  return [
-    gm ? "gm" : "nogm",
-    player ? "player" : "notplayer",
-    unit.id,
-    unit.playerName,
-    unit.characterName,
-    unit.baseline,
-    unit.commandWindow || "",
-    unit.color || "",
-    unit.team,
-    unit.phase,
-    Math.round(Number(unit.phaseProgress) || 0),
-    unit.currentAction?.label || "",
-    unit.phaseRate || "",
-    unit.currentRisk || "",
-    unit.decisionBoost ? "boost" : "noboost",
-    unit.braceActive ? "braced" : "notbraced",
-    unit.poiseRemaining ?? "paper",
-    unit.currentAction?.overcommitted ? "overcommit" : "normalcommit",
-    state?.activeId === unit.id ? "active" : "inactive",
-    state?.activeAction?.unitId === unit.id ? "resolving" : "notresolving",
-    commandFor(unit) ? "command" : "nocommand",
-    state?.hardPaused ? "paused" : "notpaused",
-  ].join("|");
-}
-
-function unitCard(unit, { gm = false, player = false } = {}) {
-  const active = state?.activeId === unit.id;
-  const resolving = state?.activeAction?.unitId === unit.id;
-  const own = player && unit.id === myUnitId;
-  const awaitingPlayerDecision = gm && active && unit.controlledBy === "player" && !resolving;
-  const phase = phaseLabel(unit);
-  const side = unit.team === "pc" ? "PC" : "NPC";
-  const command = commandFor(unit);
-  const commandBar = command
-    ? `<div class="command-bar ${command.expired ? "expired" : ""}">
-        <div class="command-bar-fill" style="width:${command.expired ? 0 : commandPercent(command)}%"></div>
-        <span>${command.expired ? "Interruption pending" : `${formatSeconds(command.remaining)} Command Window`}</span>
-      </div>`
-    : "";
-  const gmCardTools = gm
-    ? `<div class="vector-card-tools">
-        <button class="vector-icon-button damage-button" data-action="stagger" data-id="${escapeHtml(unit.id)}" title="Damage / Stagger" aria-label="Apply damage and Stagger to ${escapeHtml(unit.characterName)}">
-          <span class="target-symbol" aria-hidden="true"></span>
-        </button>
-        ${unit.team === "npc" ? `<button class="vector-icon-button npc-poise-button" data-action="poise" data-id="${escapeHtml(unit.id)}" title="Spend NPC Poise" aria-label="Spend Poise for ${escapeHtml(unit.characterName)}"></button>` : ""}
-      </div>`
-    : "";
-  return `
-    <article class="unit-card vector-unit-card phase-${escapeHtml(unit.phase)} ${active ? "ready" : ""} ${resolving ? "resolving" : ""} ${own ? "own-unit" : ""}" data-unit-id="${escapeHtml(unit.id)}" data-signature="${escapeHtml(unitSignature(unit, { gm, player }))}" style="${barStyle(unit)}">
-      <div class="unit-top vector-unit-top">
-        <div class="vector-card-main">
-          <div class="unit-name">${escapeHtml(unit.characterName)}</div>
-          <div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - Base ${formatRate(unit.baseline)}${unit.commandWindow ? ` - ${unit.commandWindow} sec Command` : ""}</div>
-        </div>
-        <div class="vector-action-readout">
-          <strong>${escapeHtml(awaitingPlayerDecision ? "Awaiting Player" : actionLabel(unit))}</strong>
-          <span class="${Number(unit.currentRisk) < 0 ? "risk-good" : Number(unit.currentRisk) > 0 ? "risk-bad" : ""}">${escapeHtml(currentRiskLabel(unit))}</span>
-        </div>
-        ${gmCardTools}
-        ${
-          player && own
-            ? `<label class="player-color-inline" title="Change your ATB color">
-                <span>Color</span>
-                <input data-action="playerColor" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color || "#39e58f")}" />
-              </label>`
-            : ""
-        }
-        <div class="unit-readout">
-          <strong>${Math.floor(Number(unit.phaseProgress) || 0)}%</strong>
-          <span>${escapeHtml(estimatePhase(unit))}</span>
-        </div>
-        ${
-          gm
-            ? `<div class="unit-actions">
-                <label class="name-edit">
-                  Name
-                  <input data-action="name" data-id="${escapeHtml(unit.id)}" value="${escapeHtml(unit.characterName)}" />
-                </label>
-                <label class="speed-edit">
-                  Base
-                  <input data-action="speed" data-id="${escapeHtml(unit.id)}" type="number" min="1" max="30" step="1" value="${escapeHtml(unit.baseline)}" />
-                </label>
-                ${
-                  unit.team === "pc"
-                    ? `<label class="command-edit">
-                        Command
-                        <input data-action="commandWindow" data-id="${escapeHtml(unit.id)}" type="number" min="1" max="999" step="1" value="${escapeHtml(unit.commandWindow || DEFAULT_COMMAND_WINDOW)}" />
-                      </label>`
-                    : ""
-                }
-                <label class="color-edit">
-                  Color
-                  <input data-action="color" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color || "#39e58f")}" />
-                </label>
-                <button class="mini" data-action="nudge" data-id="${escapeHtml(unit.id)}">+5%</button>
-                <button class="mini danger" data-action="remove" data-id="${escapeHtml(unit.id)}">Remove</button>
-              </div>`
-            : ""
-        }
-      </div>
-      ${commandBar}
-      <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}">
-        <div class="fill" style="width:${pct(unit)}"></div>
-        <div class="vector-bar-label">${escapeHtml(awaitingPlayerDecision ? "AWAITING PLAYER DECISION" : phase)}</div>
-      </div>
-      <div class="vector-phase-foot">
-        <span>${escapeHtml(awaitingPlayerDecision ? "Player selecting action" : phaseVerb(unit))}</span>
-        <span>Rate ${formatRate(unit.phaseRate || 0)}/sec</span>
-      </div>
-      ${gm && !awaitingPlayerDecision ? actionButtonsMarkup(unit) : ""}
-    </article>
-  `;
-}
-
-function renderUnitList(sorted) {
-  const gm = mode === "gm";
-  const player = mode === "player";
-  unitList.innerHTML = sorted.map((unit) => unitCard(unit, { gm, player })).join("");
-}
-
-function activeUnit() {
-  return state?.units.find((unit) => unit.id === state.activeId) || null;
-}
-
-function myUnit() {
-  return state?.units.find((unit) => unit.id === myUnitId) || null;
-}
-
-function statusText() {
-  if (!state) return "Connecting";
-  if (state.hardPaused) return "Paused";
-  if (state.pausedForResolution) return "Resolution";
-  if (state.pausedForTurn) return "Decision";
-  return state.running ? "Clock Engaged" : "Waiting for GM";
-}
-
-function renderActivePanel() {
-  if (!state) return;
-  const active = activeUnit();
-  const activeAction = state.activeAction;
-  activePanel.classList.toggle("turn-live", Boolean(active || activeAction));
-  activePanel.classList.toggle("own-turn", Boolean(active) && active.id === myUnitId);
-  activePanel.classList.toggle("other-turn", Boolean(activeAction) || (Boolean(active) && active.id !== myUnitId));
-  activePanel.classList.toggle("clock-running", state.running && !state.pausedForTurn && !state.pausedForResolution && !state.hardPaused);
-
-  if (activeAction) {
-    activeKicker.textContent = "Resolve Action";
-    activeTitle.textContent = `RESOLVE: ${activeAction.label}`;
-    const attack = activeAction.action || {};
-    const hit = attack.hitBonus === null || attack.hitBonus === undefined ? "No To-Hit" : `To-Hit ${signedNumber(attack.hitBonus)}`;
-    const damage = attack.damage ? `Damage ${attack.damage}${attack.damageType ? ` ${attack.damageType}` : ""}` : "No damage";
-    const overcommit = activeAction.overcommitted ? " - OVERCOMMIT ACTIVE" : "";
-    activeMeta.textContent = `${activeAction.characterName} - ${hit} - ${damage}${overcommit}`;
-    return;
-  }
-
-  if (active) {
-    activeKicker.textContent = "Decision Window";
-    const command = commandFor(active);
-    if (mode === "gm" && active.controlledBy === "player") {
-      activeTitle.textContent = "Awaiting player decision";
-      activeMeta.textContent = command ? `${active.characterName} - ${formatSeconds(command.remaining)} Command Window` : active.characterName;
-    } else {
-      activeTitle.textContent = `${active.characterName}: choose action`;
-      activeMeta.textContent = command ? `${formatSeconds(command.remaining)} Command Window` : "NPC decision paused";
-    }
-    return;
-  }
-
-  if (state.hardPaused) {
-    activeKicker.textContent = "Clock Status";
-    activeTitle.textContent = "All timers paused";
-    activeMeta.textContent = "Engage Clock to resume";
-    return;
-  }
-
-  if (state.running) {
-    const next = [...state.units]
-      .filter((unit) => unit.phase === "decision" && unit.phaseProgress < state.threshold)
-      .sort((a, b) => (state.threshold - a.phaseProgress) / (a.phaseRate || 1) - (state.threshold - b.phaseProgress) / (b.phaseRate || 1))[0];
-    activeKicker.textContent = "Clock Engaged";
-    activeTitle.textContent = next ? `${next.characterName} is building DECISION` : "Action phases in motion";
-    activeMeta.textContent = next ? estimatePhase(next) : `${state.units.length} participant(s) moving`;
-    return;
-  }
-
-  activeKicker.textContent = "Clock Status";
-  activeTitle.textContent = state.units.length ? "Waiting for GM to engage clock" : "Waiting for characters to join";
-  activeMeta.textContent = state.units.length ? `${state.units.length} participant(s) standing by` : "No active turn";
-}
-
-function renderRejoinOptions() {
-  const options = state?.units.filter((unit) => unit.controlledBy === "player") || [];
-  rejoinBlock.classList.toggle("hidden", mode !== "join" || options.length === 0);
-  rejoinSelect.innerHTML = options
-    .map((unit) => `<option value="${escapeHtml(unit.id)}">${escapeHtml(unit.characterName)} - ${escapeHtml(unit.playerName)}</option>`)
-    .join("");
-}
-
-function renderPlayerCommand(mine) {
-  const command = commandFor(mine);
-  const isMyDecision = Boolean(mine && state?.activeId === mine.id);
-  const isMyResolution = Boolean(mine && state?.activeAction?.unitId === mine.id);
-  const focusActive = mode === "player" && (isMyDecision || isMyResolution);
-
-  myTurnBanner.classList.add("hidden");
-  playerTurnActions.innerHTML = "";
-  playerFocusScreen.classList.toggle("hidden", !focusActive);
-  playerFocusScreen.classList.toggle("is-decision", isMyDecision);
-  playerFocusScreen.classList.toggle("is-resolution", isMyResolution);
-  document.body.classList.toggle("player-focus-active", focusActive);
-  if (!focusActive || !mine) {
-    playerActionRequestPending = false;
-    playerActionPointer = null;
-    playerFocusActions.innerHTML = "";
-    playerFocusActions.dataset.signature = "";
-    playerFocusActions.removeAttribute("aria-busy");
-    return;
-  }
-
-  playerFocusCharacter.textContent = mine.characterName;
-  playerFocusRoomCode.textContent = state.roomCode;
-  playerDecisionView.classList.toggle("hidden", !isMyDecision);
-  playerResolutionView.classList.toggle("hidden", !isMyResolution);
-
-  if (isMyResolution) {
-    playerActionRequestPending = false;
-    playerActionPointer = null;
-    playerFocusActions.removeAttribute("aria-busy");
-    const activeAction = state.activeAction;
-    playerFocusEyebrow.textContent = activeAction.overcommitted ? "Overcommit Active" : "Resolution";
-    playerResolutionAction.textContent = playerActionLabel(activeAction.action || activeAction);
-    playerResolutionStatus.textContent = activeAction.overcommitted ? "Damage increased - Recovery slowed" : "GM resolving";
-    return;
-  }
-
-  const percent = command ? (command.expired ? 0 : commandPercent(command)) : 100;
-  const remaining = command ? command.remaining : 0;
-  playerFocusEyebrow.textContent = mine.decisionBoost ? "Decision x2" : "Decision Window";
-  playerFocusCommandTime.textContent = command ? formatSeconds(remaining) : "READY";
-  playerFocusPrompt.textContent = command?.expired ? "Choose now" : "Choose one action";
-  playerCommandTrackFill.style.width = `${percent}%`;
-  playerFocusTimer.style.setProperty("--command-percent", `${percent}%`);
-  playerFocusTimer.style.setProperty("--command-elapsed", `${100 - percent}%`);
-  playerFocusTimer.style.setProperty("--timer-hue", `${Math.round(percent * 1.2)}deg`);
-  playerFocusTimer.classList.toggle("urgent", Boolean(command && remaining <= 10 && remaining > 5));
-  playerFocusTimer.classList.toggle("critical", Boolean(command && remaining <= 5));
-
-  const actionSignature = `${mine.id}:${actions().map((entry) => `${entry.id}:${entry.label}`).join("|")}`;
-  if (playerFocusActions.dataset.signature !== actionSignature) {
-    playerFocusActions.innerHTML = playerActionButtonsMarkup(mine);
-    playerFocusActions.dataset.signature = actionSignature;
-  }
-}
-
-function renderPlayerLog(mine) {
-  if (mode !== "player" || !state) {
-    playerLogDrawer.classList.add("hidden");
-    document.body.classList.remove("player-log-open");
-    return;
-  }
-  playerLogList.innerHTML = state.log
-    .slice()
-    .reverse()
-    .map((entry) => `<article><time>${escapeHtml(entry.at)}</time><p>${escapeHtml(entry.text)}</p></article>`)
-    .join("");
-  const command = commandFor(mine);
-  const showCommand = Boolean(mine && state.activeId === mine.id && command);
-  playerLogCommand.classList.toggle("hidden", !showCommand);
-  if (showCommand) playerLogCommandTime.textContent = formatSeconds(command.remaining);
-}
-
-function openPlayerLog() {
-  if (mode !== "player" || !state) return;
-  playerLogDrawer.classList.remove("hidden");
-  document.body.classList.add("player-log-open");
-  closePlayerLog.focus();
-}
-
-function closePlayerLogDrawer() {
-  playerLogDrawer.classList.add("hidden");
-  document.body.classList.remove("player-log-open");
-}
-
-function closeStaggerDialog() {
-  staggerTargetId = "";
-  staggerDialog.classList.add("hidden");
-}
-
-function closePoiseDialog() {
-  poiseTargetId = "";
-  poiseDialog.classList.add("hidden");
-  document.body.classList.remove("poise-modal-open");
-}
-
-function renderPoiseControls(mine) {
-  const showPlayerPoise = mode === "player" && Boolean(mine);
-  playerPoiseButton.classList.toggle("hidden", !showPlayerPoise);
-  if (mine) {
-    const remaining = Math.max(0, Number(mine.poiseRemaining) || 0);
-    playerPoiseCount.textContent = String(remaining);
-    playerPoiseButton.disabled = remaining <= 0;
-    playerPoiseButton.classList.toggle("empty", remaining <= 0);
-    playerPoiseButton.classList.toggle("braced", Boolean(mine.braceActive));
-  }
-
-  if (poiseDialog.classList.contains("hidden")) return;
-  const target = state?.units.find((unit) => unit.id === poiseTargetId);
-  if (!target) {
-    closePoiseDialog();
-    return;
-  }
-  const tracksPoints = target.team === "pc";
-  const resolving = state?.activeAction?.unitId === target.id;
-  poiseDialogTarget.textContent = tracksPoints
-    ? `${target.characterName} - ${Math.max(0, Number(target.poiseRemaining) || 0)} remaining`
-    : `${target.characterName} - NPC total tracked by GM`;
-  poiseBrace.disabled = false;
-  poiseSnapBack.disabled = false;
-  poiseOvercommit.disabled = !resolving;
-  poiseOvercommit.title = resolving ? "" : "Overcommit is available during this character's Resolution.";
-}
-
-function openStaggerDialog(unitId) {
-  const unit = state?.units.find((entry) => entry.id === unitId);
-  if (!unit) return;
-  staggerTargetId = unit.id;
-  staggerDialogTarget.textContent = unit.characterName;
-  staggerDuration.value = "5";
-  staggerDialog.classList.remove("hidden");
-  staggerDuration.focus();
-  staggerDuration.select();
-}
-
-function openPoiseDialog(unitId) {
-  const unit = state?.units.find((entry) => entry.id === unitId);
-  if (!unit) return;
-  poiseTargetId = unit.id;
-  poiseDialog.classList.remove("hidden");
-  document.body.classList.add("poise-modal-open");
-  renderPoiseControls(myUnit());
-}
-
-function renderResolutionDialog() {
-  if (mode === "gm" && state?.activeAction) {
-    turnDialogKicker.textContent = state.activeAction.overcommitted ? "Overcommit - Increase Damage" : "Resolve Action";
-    activeName.textContent = `RESOLVE: ${state.activeAction.label}`;
-    activeOwner.textContent = `${state.activeAction.characterName} - ${state.activeAction.playerName}${state.activeAction.overcommitted ? " - Recovery speed halved" : ""}`;
-    completeTurn.textContent = "Action Resolved";
-    gmDelay.classList.add("hidden");
-    turnDialog.classList.remove("hidden");
-    return;
-  }
-  turnDialog.classList.add("hidden");
-}
-
-function updateGmClockButton() {
-  if (!state) {
-    gmPanicPause.classList.add("hidden");
-    return;
-  }
-  const show = mode === "gm";
-  gmPanicPause.classList.toggle("hidden", !show);
-  if (!show) return;
-  const isPaused = Boolean(state.hardPaused);
-  const waiting = !state.running && !state.pausedForTurn && !state.pausedForResolution;
-  const clockAction = isPaused ? "resume" : waiting ? "start" : "pause";
-  const label = clockAction === "pause" ? "Pause Everything" : "Engage Clock";
-  const footer = state.pausedForTurn ? "Decision active" : state.pausedForResolution ? "Resolution active" : "";
-  gmPanicPause.dataset.clockAction = clockAction;
-  gmPanicPause.classList.toggle("engage", clockAction !== "pause");
-  gmPanicPause.classList.toggle("paused", clockAction === "pause");
-  gmPanicPause.disabled = false;
-  gmPanicPause.innerHTML = `<span>${label}</span>${footer ? `<small>${footer}</small>` : ""}`;
-}
-
-function render() {
-  if (!currentRoomCode && mode !== "welcome" && mode !== "roomJoin") {
-    mode = "welcome";
-    safeLocalStorageSet("vector-atb-mode", mode);
-  }
-
-  welcomePanel.classList.toggle("hidden", mode !== "welcome");
-  roomJoinPanel.classList.toggle("hidden", mode !== "roomJoin");
-  joinPanel.classList.toggle("hidden", mode !== "join");
-  gmPanel.classList.toggle("hidden", mode !== "gm");
-  playerPanel.classList.add("hidden");
-  gmTopControls.classList.toggle("hidden", mode !== "gm");
-  playerTopControls.classList.toggle("hidden", mode !== "player");
-  topbar.classList.toggle("hidden", mode === "welcome");
-  connectionStatus.classList.toggle("hidden", mode === "welcome");
-  initiativePanel.classList.toggle("hidden", mode === "welcome" || mode === "roomJoin" || mode === "join");
-  logPanel.classList.toggle("hidden", mode === "player" || mode === "welcome" || mode === "roomJoin" || mode === "join");
-  document.body.classList.toggle("welcome-mode", mode === "welcome");
-  document.body.classList.toggle("player-mode", mode === "player");
-  document.body.classList.toggle("clock-active", Boolean(state?.running) && !state?.pausedForTurn && !state?.pausedForResolution && !state?.hardPaused);
-  document.body.classList.toggle("hard-paused", Boolean(state?.hardPaused));
-  delayDialog?.classList.add("hidden");
-  queuedEffectDialog?.classList.add("hidden");
-  visualModeToggle?.classList.add("hidden");
-  playerActionSheet?.classList.add("hidden");
-  calculatedSpeed.textContent = String(DEFAULT_BASELINE);
-  calculatedCommand.textContent = `${DEFAULT_COMMAND_WINDOW} sec`;
-  gmCommandWindowWrap.classList.toggle("hidden", gmTeam.value !== "pc");
-
-  if (!state) {
-    roomCode.textContent = currentRoomCode || "----";
-    playerRoomCode.textContent = currentRoomCode || "----";
-    activePanel.classList.add("hidden");
-    unitList.innerHTML = "";
-    logList.innerHTML = "";
-    gmPanicPause.classList.add("hidden");
-    gmMuteSound.classList.add("hidden");
-    visualModeToggle.classList.add("hidden");
-    playerPoiseButton.classList.add("hidden");
-    playerFocusScreen.classList.add("hidden");
-    document.body.classList.remove("player-focus-active");
-    closePlayerLogDrawer();
-    closeStaggerDialog();
-    closePoiseDialog();
-    return;
-  }
-
-  roomCode.textContent = state.roomCode;
-  playerRoomCode.textContent = state.roomCode;
-  activePanel.classList.toggle("hidden", mode === "welcome" || mode === "roomJoin" || mode === "join");
-  readyCount.textContent = `${state.units.filter((unit) => state.activeId === unit.id || state.activeAction?.unitId === unit.id).length} Active`;
-  clockState.textContent = statusText();
-  enableAlerts.textContent = playerAlertLabel();
-  gmMuteSound.classList.toggle("hidden", mode !== "gm");
-  gmMuteSound.classList.toggle("muted", gmSoundsMuted);
-  undoLastTiming.disabled = !state.undoAvailable;
-  undoLastTiming.title = state.undoAvailable ? "Undo the last timing/control change" : "No timing change to undo";
-  updateGmClockButton();
-  renderActivePanel();
-  renderRejoinOptions();
-  renderResolutionDialog();
-
-  const sorted = [...state.units];
-  renderUnitList(sorted);
-
-  const mine = myUnit();
-  myUnitCard.innerHTML = "";
-  renderPlayerCommand(mine);
-  renderPoiseControls(mine);
-  renderPlayerLog(mine);
-
-  logList.innerHTML = state.log
-    .slice()
-    .reverse()
-    .map((entry) => `<div><strong>${escapeHtml(entry.at)}</strong> ${escapeHtml(entry.text)}</div>`)
-    .join("");
-
-  notifyTurnIfNeeded();
-  notifyInterruptionIfNeeded();
-}
-
-function setConnected(isConnected, message = "") {
-  connectionStatus.classList.toggle("offline", !isConnected);
-  connectionStatus.textContent = message || (isConnected ? "Connected to the Vector ATB room server." : "Connection interrupted.");
-}
-
-function receiveState(nextState, { force = false } = {}) {
-  if (!nextState) return false;
-  if (!force && state?.revision && nextState.revision && nextState.revision < state.revision) return false;
-  state = nextState;
-  render();
-  return true;
-}
-
-async function action(payload, soundName = "tap") {
-  let response;
-  try {
-    response = await fetch("/api/action", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...payload, roomCode: currentRoomCode }),
-    });
-  } catch {
-    setConnected(false, "Cannot reach the Vector ATB room server. Check the connection, then try again.");
-    return state;
-  }
-  if (!response.ok) {
-    if (response.status === 404) returnToWelcome("That room expired. Create or join a new room.");
-    else setConnected(false, "The Vector ATB room server rejected that action. Try again.");
-    return state;
-  }
-  try {
-    const nextState = await response.json();
-    receiveState(nextState, { force: true });
-  } catch {
-    setConnected(false, "The Vector ATB room server sent an unreadable response. Try again.");
-    return state;
-  }
-  if (mode === "gm") playGmSound(soundName);
-  return state;
-}
-
-function setMode(next) {
-  mode = next;
+function setMode(nextMode) {
+  mode = nextMode;
   safeLocalStorageSet("vector-atb-mode", mode);
+  document.body.classList.toggle("gm-mode", mode === "gm");
+  document.body.classList.toggle("player-mode", mode === "player");
   render();
 }
 
@@ -1085,524 +143,505 @@ function setRoom(nextState) {
   state = nextState;
   currentRoomCode = state.roomCode;
   safeLocalStorageSet("vector-atb-room-code", currentRoomCode);
+  elements.roomCode.textContent = currentRoomCode;
   connectEvents();
+  setConnected(true);
+  render();
+}
+
+function receiveState(nextState) {
+  if (!nextState || (state && nextState.revision < state.revision)) return;
+  const previousEngaged = Boolean(state?.hasEngagedClock);
+  state = nextState;
+  if (mode === "gm" && !previousEngaged && state.hasEngagedClock) playCombatStartSting();
+  notifyTurnIfNeeded();
+  notifyInterruptionIfNeeded();
+  render();
+}
+
+async function action(payload, sound = "tap") {
+  if (!currentRoomCode) return null;
+  try {
+    const response = await fetch("/api/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ roomCode: currentRoomCode, ...payload }) });
+    if (!response.ok) return null;
+    const next = await response.json();
+    receiveState(next);
+    if (mode === "gm") playGmSound(sound);
+    return next;
+  } catch {
+    setConnected(false, "Connection interrupted. Retrying...");
+    return null;
+  }
 }
 
 function connectEvents() {
-  if (events) events.close();
   if (!currentRoomCode) return;
+  if (events) events.close();
   events = new EventSource(`/events?room=${encodeURIComponent(currentRoomCode)}`);
-  events.addEventListener("state", (event) => {
-    setConnected(true);
-    receiveState(JSON.parse(event.data));
+  events.addEventListener("state", (event) => { try { receiveState(JSON.parse(event.data)); setConnected(true); } catch { /* Ignore partial events. */ } });
+  events.onerror = () => setConnected(false, "Reconnecting to the room...");
+}
+
+function phaseLabel(unit) {
+  return ({ decision: "DECISION", preparation: "PREPARATION", execution: "EXECUTION", recovery: "RECOVERY", stagger: "STAGGER", dumbfounded: "DUMBFOUNDED!" })[unit?.phase] || String(unit?.phase || "").toUpperCase();
+}
+
+function actionLabel(unit) {
+  if (state?.activeId === unit?.id) return "Choose Action";
+  if (state?.activeAction?.unitId === unit?.id) return state.activeAction.label;
+  if (unit?.phase === "stagger") return "Action Voided";
+  if (unit?.phase === "execution" && unit.currentAction?.kind === "move") return `Move - ${formatRate(unit.movementUnits)} / ${formatRate(unit.currentAction.movement.distance)} units`;
+  return unit?.currentAction?.label || "Read Battlefield";
+}
+
+function currentRiskLabel(unit) {
+  const risk = Number(unit?.currentRisk) || 0;
+  if (unit?.phase === "execution" && unit.currentAction?.kind === "move") return "Risk + vs melee";
+  return risk ? `Risk ${mark(risk)} (-${risk} DEX ${risk === 1 ? "die" : "dice"})` : "Risk 0";
+}
+
+function estimatePhase(unit) {
+  if (state?.activeId === unit?.id) return commandFor(unit) ? `${formatClock(commandFor(unit).remaining)} Command` : "Choose action";
+  if (state?.activeAction?.unitId === unit?.id) return "Resolution paused";
+  const rate = Number(unit?.phaseRate) || 0;
+  if (!rate) return "Paused";
+  const remaining = unit.phaseDirection === "down" ? pct(unit) : 100 - pct(unit);
+  return `${formatSecondsValue(remaining / rate)} at Rate ${formatRate(rate)}`;
+}
+
+function unitStructureSignature(unit, gm, player) {
+  return [unit.id, gm, player, unit.characterName, unit.playerName, unit.team, unit.phase, unit.currentAction?.label, unit.currentAction?.kind, unit.currentRisk, formatRate(unit.phaseRate), unit.poiseRemaining, unit.poiseMax, unit.staggerImmunity, unit.poiseLocked, unit.actionQueue?.length, state?.activeId === unit.id, state?.activeAction?.unitId === unit.id, state?.hardPaused].join("|");
+}
+
+function actionButtonsMarkup(unit) {
+  if (state?.activeId !== unit.id || state?.activeAction) return "";
+  return `<div class="vector-action-grid" data-action-unit="${escapeHtml(unit.id)}">${actions().map((entry) => `<button type="button" class="vector-action-button action-${escapeHtml(entry.id)}" data-action-id="${escapeHtml(entry.id)}"><strong>${escapeHtml(entry.label)}</strong></button>`).join("")}</div>`;
+}
+
+function unitCardMarkup(unit, { gm = false, player = false } = {}) {
+  const active = state?.activeId === unit.id;
+  const resolving = state?.activeAction?.unitId === unit.id;
+  const own = player && unit.id === myUnitId;
+  const awaitingPlayer = gm && active && unit.controlledBy === "player";
+  const side = unit.team === "pc" ? "PC" : "NPC";
+  const poiseTool = gm && unit.poiseMax > 0 ? `<button class="vector-icon-button npc-poise-button" data-action="poise" data-id="${escapeHtml(unit.id)}" title="Poise ${unit.poiseRemaining}/${unit.poiseMax}" aria-label="Poise for ${escapeHtml(unit.characterName)}"><span>${unit.poiseRemaining}</span></button>` : "";
+  return `<article class="unit-card vector-unit-card phase-${escapeHtml(unit.phase)} ${active ? "ready" : ""} ${resolving ? "resolving" : ""} ${own ? "own-unit" : ""}" data-unit-id="${escapeHtml(unit.id)}" data-signature="${escapeHtml(unitStructureSignature(unit, gm, player))}" style="--bar:${escapeHtml(unit.color || "#39e58f")}">
+    <div class="vector-unit-head">
+      <div><div class="unit-name">${escapeHtml(unit.characterName)}</div><div class="unit-owner">${escapeHtml(unit.playerName)} - ${side} - DEC ${formatRate(unit.stats.intellect + unit.stats.initiative)} - Move ${unit.moveSpeed}</div></div>
+      <div class="unit-readout"><strong class="unit-percent">${Math.floor(pct(unit))}%</strong><span class="unit-estimate">${escapeHtml(estimatePhase(unit))}</span></div>
+      ${gm ? `<div class="vector-card-tools"><button class="vector-icon-button damage-button" data-action="stagger" data-id="${escapeHtml(unit.id)}" title="Damage / Stagger" aria-label="Apply Stagger"><span class="target-symbol"></span></button>${poiseTool}</div>` : ""}
+    </div>
+    <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label">${escapeHtml(awaitingPlayer ? "AWAITING PLAYER DECISION" : phaseLabel(unit))}</div></div>
+    <div class="vector-action-line"><strong class="unit-action-name">${escapeHtml(awaitingPlayer ? "Awaiting Player" : actionLabel(unit))}</strong><span class="unit-risk">${escapeHtml(currentRiskLabel(unit))}</span></div>
+    ${player && own ? `<label class="player-color-inline"><span>Color</span><input data-action="playerColor" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color)}" /></label>` : ""}
+    ${gm ? `<div class="unit-actions"><label>Name<input data-action="name" data-id="${escapeHtml(unit.id)}" value="${escapeHtml(unit.characterName)}" /></label>${unit.team === "pc" ? `<label>Command<input data-action="commandWindow" data-id="${escapeHtml(unit.id)}" type="number" min="1" value="${unit.commandWindow || DEFAULT_COMMAND_WINDOW}" /></label>` : ""}<label>Color<input data-action="color" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color)}" /></label><button class="mini" data-action="nudge" data-id="${escapeHtml(unit.id)}">+5%</button><button class="mini danger" data-action="remove" data-id="${escapeHtml(unit.id)}">Remove</button></div>` : ""}
+    ${gm && !awaitingPlayer ? actionButtonsMarkup(unit) : ""}
+  </article>`;
+}
+
+function updateUnitCard(card, unit) {
+  card.querySelector(".fill")?.style.setProperty("width", `${pct(unit)}%`);
+  const percent = card.querySelector(".unit-percent"); if (percent) percent.textContent = `${Math.floor(pct(unit))}%`;
+  const estimate = card.querySelector(".unit-estimate"); if (estimate) estimate.textContent = estimatePhase(unit);
+  const actionName = card.querySelector(".unit-action-name"); if (actionName) actionName.textContent = actionLabel(unit);
+  const risk = card.querySelector(".unit-risk"); if (risk) risk.textContent = currentRiskLabel(unit);
+}
+
+function renderUnitList(units) {
+  const gm = mode === "gm";
+  const player = mode === "player";
+  const wanted = new Set(units.map((unit) => unit.id));
+  for (const card of elements.unitList.querySelectorAll("[data-unit-id]")) if (!wanted.has(card.dataset.unitId)) card.remove();
+  units.forEach((unit, index) => {
+    let card = elements.unitList.querySelector(`[data-unit-id="${CSS.escape(unit.id)}"]`);
+    const signature = unitStructureSignature(unit, gm, player);
+    if (!card || card.dataset.signature !== signature) {
+      const shell = document.createElement("div");
+      shell.innerHTML = unitCardMarkup(unit, { gm, player }).trim();
+      const replacement = shell.firstElementChild;
+      if (card) card.replaceWith(replacement); else elements.unitList.append(replacement);
+      card = replacement;
+    }
+    updateUnitCard(card, unit);
+    const expected = elements.unitList.children[index];
+    if (expected !== card) elements.unitList.insertBefore(card, expected || null);
   });
-  events.addEventListener("error", () => {
-    setConnected(false, "Cannot reach this Vector ATB room. It may have expired or the server may be waking up.");
-    verifySavedRoomStillExists();
-  });
 }
 
-async function verifySavedRoomStillExists() {
-  if (!currentRoomCode || mode === "welcome" || mode === "roomJoin") return;
-  try {
-    const response = await fetch(`/api/state?room=${encodeURIComponent(currentRoomCode)}`);
-    if (response.status === 404) {
-      returnToWelcome("That room expired. Create or join a new room.");
-      return;
-    }
-    if (response.ok && !events) {
-      setRoom(await response.json());
-      render();
-    }
-  } catch {
-    // Keep the current screen during brief network wake-ups.
-  }
-}
-
-async function keepRoomAwake() {
-  if (mode !== "gm" || !currentRoomCode) return;
-  try {
-    const response = await fetch(`/api/keep-alive?room=${encodeURIComponent(currentRoomCode)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-    if (response.status === 404) {
-      returnToWelcome("That room expired. Create or join a new room.");
-      return;
-    }
-    if (!response.ok) {
-      setConnected(false, "Trying to keep the Vector ATB room awake...");
-      return;
-    }
-    receiveState(await response.json());
-    setConnected(true);
-  } catch {
-    setConnected(false, "Trying to keep the Vector ATB room awake...");
-  }
-}
-
-function returnToWelcome(message = "") {
-  if (events) {
-    events.close();
-    events = null;
-  }
-  state = null;
-  currentRoomCode = "";
-  myUnitId = "";
-  localStorage.removeItem("vector-atb-room-code");
-  localStorage.removeItem("vector-atb-unit-id");
-  setConnected(false, message || "Disconnected.");
-  setMode("welcome");
-}
-
-function notifyTurnIfNeeded() {
+function renderActivePanel() {
   if (!state) return;
   const active = activeUnit();
-  if (!active) {
-    lastNotifiedActiveId = "";
-    lastCommandWarningKey = "";
+  if (state.activeAction) {
+    elements.activeKicker.textContent = "Resolve Action";
+    elements.activeTitle.textContent = `RESOLVE: ${state.activeAction.label}`;
+    const target = state.activeAction.targetName !== "None/N/A" ? `Target ${state.activeAction.targetName}` : "No target";
+    const moving = state.activeAction.movingTargetPenalty ? ` - Moving target To-Hit -${state.activeAction.movingTargetPenalty}` : "";
+    elements.activeMeta.textContent = `${state.activeAction.characterName} - ${target}${moving}`;
+  } else if (state.pendingStagger) {
+    elements.activeKicker.textContent = "Stagger Response"; elements.activeTitle.textContent = `Awaiting ${state.pendingStagger.characterName}`; elements.activeMeta.textContent = `${formatSecondsValue(state.pendingStagger.duration)} Stagger`;
+  } else if (active) {
+    elements.activeKicker.textContent = "Decision Window";
+    elements.activeTitle.textContent = mode === "gm" && active.controlledBy === "player" ? "Awaiting player decision" : `${active.characterName}: choose action`;
+    elements.activeMeta.textContent = commandFor(active) ? `${formatClock(commandFor(active).remaining)} Command Window` : active.characterName;
+  } else {
+    elements.activeKicker.textContent = "Clock Status";
+    elements.activeTitle.textContent = state.hardPaused ? "All timers paused" : state.running ? "Action phases in motion" : state.units.length ? "Waiting for GM to engage clock" : "Waiting for characters";
+    elements.activeMeta.textContent = `${state.units.length} participant${state.units.length === 1 ? "" : "s"}`;
+  }
+}
+
+function playerActionMarkup() {
+  return playerVisibleActions().map((entry, index) => `<button type="button" class="player-action-choice action-${escapeHtml(entry.id)}" data-action-id="${escapeHtml(entry.id)}" data-index="${String(index + 1).padStart(2, "0")}"><span>${escapeHtml(entry.label)}</span></button>`).join("");
+}
+
+function renderPlayerCommand(mine) {
+  const isDecision = Boolean(mine && state?.activeId === mine.id);
+  const isResolution = Boolean(mine && state?.activeAction?.unitId === mine.id);
+  const focus = mode === "player" && (isDecision || isResolution);
+  const focusEnded = playerFocusWasActive && !focus && mode === "player";
+  playerFocusWasActive = focus;
+  elements.playerFocusScreen.classList.toggle("hidden", !focus);
+  document.body.classList.toggle("player-focus-active", focus);
+  if (focusEnded) requestAnimationFrame(() => window.scrollTo(0, 0));
+  if (!focus || !mine) return;
+  elements.playerFocusCharacter.textContent = mine.characterName;
+  elements.playerFocusRoomCode.textContent = state.roomCode;
+  elements.playerDecisionView.classList.toggle("hidden", !isDecision);
+  elements.playerResolutionView.classList.toggle("hidden", !isResolution);
+  if (isResolution) {
+    elements.playerFocusEyebrow.textContent = "Resolution";
+    elements.playerResolutionAction.textContent = state.activeAction.label;
+    elements.playerResolutionStatus.textContent = state.activeAction.targetName !== "None/N/A" ? `Target: ${state.activeAction.targetName}` : "GM resolving";
     return;
   }
+  const command = commandFor(mine);
+  const percent = command ? clamp((command.remaining / command.total) * 100, 0, 100) : 100;
+  elements.playerFocusEyebrow.textContent = mine.decisionBoost ? "Decision x2" : "Decision Window";
+  elements.playerFocusCommandTime.textContent = command ? formatClock(command.remaining) : "READY";
+  elements.playerFocusPrompt.textContent = command?.expired ? "Choose now" : "Choose one action";
+  elements.playerCommandTrackFill.style.width = `${percent}%`;
+  elements.playerFocusTimer.style.setProperty("--command-elapsed", `${100 - percent}%`);
+  elements.playerFocusTimer.style.setProperty("--timer-hue", `${Math.round(percent * 1.2)}deg`);
+  elements.playerFocusTimer.classList.toggle("urgent", Boolean(command && command.remaining <= 10 && command.remaining > 5));
+  elements.playerFocusTimer.classList.toggle("critical", Boolean(command && command.remaining <= 5));
+  if (!elements.playerFocusActions.children.length) elements.playerFocusActions.innerHTML = playerActionMarkup();
+}
+
+function availablePoiseChoices(unit) {
+  if (!unit || unit.poiseLocked) return [];
+  const level = Number(unit.stats.composure) || 0;
+  const points = Number(unit.poiseRemaining) || 0;
+  const choices = [];
+  if (level >= 1 && points >= 1) choices.push({ use: "snapBack", name: "Snap Back", cost: 1, text: "Void the current state and begin Decision at twice normal speed." });
+  if (level >= 3 && points >= 1 && !["decision", "stagger"].includes(unit.phase) && !unit.staggerImmunity) choices.push({ use: "staggerImmunity", name: "Stagger Immunity", cost: 1, text: "Ignore Stagger until the next Decision fills." });
+  const attackWindow = unit.phase === "decision" || (unit.phase === "preparation" && unit.currentAction?.kind === "attack");
+  if (level >= 4 && points >= 2 && attackWindow) choices.push({ use: "heavyStagger", name: unit.pendingAttackPoise?.heavyStagger ? "Cancel Crushing Commitment" : "Crushing Commitment", cost: unit.pendingAttackPoise?.heavyStagger ? 0 : 2, text: "Double inflicted Stagger and this attack's Recovery time." });
+  if (level >= 5 && points >= 2 && attackWindow) choices.push({ use: "poiseBreaker", name: unit.pendingAttackPoise?.poiseBreaker ? "Cancel Poise Breaker" : "Poise Breaker", cost: unit.pendingAttackPoise?.poiseBreaker ? 0 : 2, text: "Defeat all Poise protection; double Preparation time." });
+  if (level >= 6 && points >= 3) choices.push({ use: "rapidRecovery", name: "Rapid Recovery", cost: 3, text: "Halve the next three Recovery or Stagger durations. Stacks." });
+  return choices;
+}
+
+function renderPoiseControls(mine) {
+  const show = mode === "player" && Boolean(mine) && mine.poiseMax > 0;
+  elements.playerPoiseButton.classList.toggle("hidden", !show);
+  if (mine) {
+    elements.playerPoiseCount.textContent = `${mine.poiseRemaining}/${mine.poiseMax}`;
+    elements.playerPoiseButton.classList.toggle("empty", mine.poiseRemaining <= 0);
+    elements.playerPoiseButton.classList.toggle("braced", Boolean(mine.staggerImmunity));
+  }
+  if (elements.poiseDialog.classList.contains("hidden")) return;
+  const target = state?.units.find((unit) => unit.id === poiseTargetId);
+  if (!target) return closePoiseDialog();
+  elements.poiseDialogTarget.textContent = `${target.characterName} - ${target.poiseRemaining}/${target.poiseMax}`;
+  const choices = availablePoiseChoices(target);
+  elements.poiseChoiceList.innerHTML = choices.length ? choices.map((choice) => `<button type="button" data-poise-use="${choice.use}"><strong>${escapeHtml(choice.name)}${choice.cost ? ` - ${choice.cost} Poise` : ""}</strong><small>${escapeHtml(choice.text)}</small></button>`).join("") : `<p class="empty-poise-options">No Poise options are available now.</p>`;
+}
+
+function renderQueue(mine) {
+  const show = mode === "player" && Boolean(mine);
+  elements.playerQueueButton.classList.toggle("hidden", !show);
+  if (mine) elements.playerQueueCount.textContent = `${mine.actionQueue.length}/2`;
+  if (elements.queueDialog.classList.contains("hidden") || !mine) return;
+  elements.queuedActionList.innerHTML = mine.actionQueue.length ? mine.actionQueue.map((entry, index) => `<article><div><strong>${escapeHtml(actionById(entry.actionId).label)}</strong><span>${entry.targetId ? escapeHtml(state.units.find((unit) => unit.id === entry.targetId)?.characterName || "Invalid target") : entry.distance ? `${formatRate(entry.distance)} units` : "Configured"}</span></div><button type="button" data-remove-queue="${index}" aria-label="Remove queued action">&times;</button></article>`).join("") : `<p class="queue-empty">No actions queued.</p>`;
+  elements.queueActionChoices.innerHTML = mine.actionQueue.length >= 2 ? "" : playerVisibleActions().map((entry) => `<button type="button" data-queue-action="${entry.id}">${escapeHtml(entry.label)}</button>`).join("");
+}
+
+function renderStaggerResponse() {
+  const pending = state?.pendingStagger;
+  const unit = pending ? state.units.find((entry) => entry.id === pending.unitId) : null;
+  const responsible = unit && ((mode === "player" && unit.id === myUnitId) || (mode === "gm" && unit.controlledBy !== "player"));
+  elements.staggerResponseDialog.classList.toggle("hidden", !responsible);
+  if (responsible) {
+    elements.staggerResponseTitle.textContent = `${unit.characterName}: Stagger`;
+    elements.staggerResponseText.textContent = `${formatSecondsValue(pending.duration)} will void the current action.`;
+    elements.ignoreStagger.classList.toggle("hidden", unit.stats.composure < 2 || unit.poiseRemaining < 1);
+  }
+}
+
+function renderResolutionDialog() {
+  if (mode === "gm" && state?.activeAction) {
+    elements.turnDialogKicker.textContent = state.activeAction.action.poiseBreaker ? "Poise Breaker" : "Resolve Action";
+    elements.activeName.textContent = `RESOLVE: ${state.activeAction.label}`;
+    const moving = state.activeAction.movingTargetPenalty ? ` - To-Hit ${-state.activeAction.movingTargetPenalty}` : "";
+    elements.activeOwner.textContent = `${state.activeAction.characterName} - Target: ${state.activeAction.targetName}${moving}`;
+    elements.turnDialog.classList.remove("hidden");
+  } else elements.turnDialog.classList.add("hidden");
+}
+
+function renderPlayerLog(mine) {
+  if (!state) return;
+  const markup = state.log.slice().reverse().map((entry) => `<article><time>${escapeHtml(entry.at)}</time><p>${escapeHtml(entry.text)}</p></article>`).join("");
+  elements.playerLogList.innerHTML = markup;
+  elements.logList.innerHTML = state.log.slice().reverse().map((entry) => `<div><span>${escapeHtml(entry.at)}</span>${escapeHtml(entry.text)}</div>`).join("");
+  const command = commandFor(mine);
+  elements.playerLogCommand.classList.toggle("hidden", !command);
+  if (command) elements.playerLogCommandTime.textContent = formatClock(command.remaining);
+}
+
+function render() {
+  if (!currentRoomCode && !["welcome", "roomJoin"].includes(mode)) mode = "welcome";
+  document.body.classList.toggle("gm-mode", mode === "gm");
+  document.body.classList.toggle("player-mode", mode === "player");
+  elements.welcomePanel.classList.toggle("hidden", mode !== "welcome");
+  elements.roomJoinPanel.classList.toggle("hidden", mode !== "roomJoin");
+  elements.joinPanel.classList.toggle("hidden", mode !== "join");
+  elements.gmPanel.classList.toggle("hidden", mode !== "gm");
+  elements.gmTopControls.classList.toggle("hidden", mode !== "gm");
+  elements.gmMuteSound.classList.toggle("hidden", mode !== "gm");
+  elements.playerTopControls.classList.toggle("hidden", mode !== "player");
+  elements.topbar.classList.toggle("hidden", ["welcome", "roomJoin"].includes(mode));
+  elements.initiativePanel.classList.toggle("hidden", !state || !["gm", "player"].includes(mode));
+  elements.logPanel.classList.toggle("hidden", !state || mode !== "gm");
+  elements.activePanel.classList.toggle("hidden", !state || mode !== "gm");
+  elements.gmPanicPause.classList.toggle("hidden", mode !== "gm" || !state);
+  if (!state) return;
+  const previousRejoinId = elements.rejoinSelect.value || myUnitId;
+  const rejoinable = mode === "join" ? state.units.filter((unit) => unit.controlledBy === "player") : [];
+  elements.rejoinBlock.classList.toggle("hidden", rejoinable.length === 0);
+  elements.rejoinSelect.innerHTML = rejoinable.map((unit) => `<option value="${escapeHtml(unit.id)}"${unit.id === previousRejoinId ? " selected" : ""}>${escapeHtml(unit.characterName)} (${escapeHtml(unit.playerName)})</option>`).join("");
+  elements.roomCode.textContent = state.roomCode;
+  elements.playerRoomCode.textContent = state.roomCode;
+  elements.readyCount.textContent = `${state.units.filter((unit) => unit.phase === "decision" && unit.phaseProgress >= 100).length} Ready`;
+  elements.clockState.textContent = state.hardPaused ? "Paused" : state.pausedForStagger ? "Stagger" : state.pausedForResolution ? "Resolution" : state.pausedForTurn ? "Decision" : state.running ? "Engaged" : "Waiting";
+  elements.gmPanicPause.innerHTML = state.hardPaused || (!state.running && !state.pausedForTurn && !state.pausedForResolution && !state.pausedForStagger) ? "<span>Engage Clock</span>" : "<span>Pause Everything</span>";
+  const mine = myUnit();
+  const visibleUnits = mode === "player" && mine ? [mine] : state.units;
+  renderUnitList(visibleUnits);
+  renderActivePanel();
+  renderPlayerCommand(mine);
+  renderPoiseControls(mine);
+  renderQueue(mine);
+  renderStaggerResponse();
+  renderResolutionDialog();
+  renderPlayerLog(mine);
+  elements.enableAlerts.textContent = alertsEnabled ? "Sound: On" : "Sound: Off";
+  elements.undoLastTiming.disabled = !state.undoAvailable;
+}
+
+function targetOptions(unit) {
+  const likely = state.units.filter((entry) => entry.id !== unit.id && entry.team !== unit.team);
+  return `${likely.map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.characterName)}</option>`).join("")}<option value="__other__">Other...</option><option value="">None/N/A</option>`;
+}
+
+function openActionConfig(unitId, actionId, { queue = false } = {}) {
+  const unit = state?.units.find((entry) => entry.id === unitId);
+  const template = actionById(actionId);
+  if (!unit || !template) return;
+  const needsConfig = template.kind === "move" || template.targetMode !== "none" || (template.id === "improvised" && mode === "gm");
+  if (!needsConfig) return submitConfiguredAction({ unitId, actionId, queue });
+  actionConfigContext = { unitId, actionId, queue };
+  elements.actionConfigEyebrow.textContent = queue ? "Queue Action" : template.id === "improvised" ? "GM Special Action" : "Configure Action";
+  elements.actionConfigTitle.textContent = template.label;
+  elements.actionDistanceWrap.classList.toggle("hidden", template.kind !== "move");
+  elements.actionTargetWrap.classList.toggle("hidden", template.targetMode === "none");
+  elements.improvisedFields.classList.toggle("hidden", template.id !== "improvised" || mode !== "gm");
+  elements.actionOtherTargetWrap.classList.add("hidden");
+  if (template.targetMode !== "none") {
+    elements.actionTarget.innerHTML = targetOptions(unit);
+    elements.actionOtherTarget.innerHTML = state.units.filter((entry) => entry.id !== unit.id).map((entry) => `<option value="${escapeHtml(entry.id)}">${escapeHtml(entry.characterName)} (${entry.team.toUpperCase()})</option>`).join("");
+  }
+  elements.actionConfigDialog.classList.remove("hidden");
+}
+
+function closeActionConfig() { actionConfigContext = null; elements.actionConfigDialog.classList.add("hidden"); elements.actionOtherTargetWrap.classList.add("hidden"); }
+
+async function submitConfiguredAction({ unitId, actionId, queue = false, targetId = null, distance = null, customAction = null }) {
+  const payload = { action: queue ? "queueAction" : "chooseAction", id: unitId, actionId, targetId, distance, customAction };
+  if (!queue && mode === "player") {
+    if (playerActionRequestPending) return;
+    playerActionRequestPending = true;
+    elements.playerFocusActions.setAttribute("aria-busy", "true");
+    elements.playerFocusPrompt.textContent = "Locking action";
+  }
+  await action(payload, "start");
+  playerActionRequestPending = false;
+  elements.playerFocusActions.removeAttribute("aria-busy");
+  if (queue) openQueueDialog();
+}
+
+function confirmConfiguredAction() {
+  if (!actionConfigContext) return;
+  const context = actionConfigContext;
+  const template = actionById(context.actionId);
+  let targetId = null;
+  if (template.targetMode !== "none") targetId = elements.actionTarget.value === "__other__" ? elements.actionOtherTarget.value : elements.actionTarget.value || null;
+  const distance = template.kind === "move" ? Math.max(0.01, numberValue("actionDistance", 1)) : null;
+  const customAction = template.id === "improvised" && mode === "gm" ? {
+    label: elements.improvisedName.value,
+    preparationRate: numberValue("improvisedPreparation", 10), preparationRisk: numberValue("improvisedPreparationRisk", 1),
+    executionRate: numberValue("improvisedExecution", 20), executionRisk: numberValue("improvisedExecutionRisk", 3),
+    recoveryRate: numberValue("improvisedRecovery", 15), recoveryRisk: numberValue("improvisedRecoveryRisk", 2), hasResolution: true,
+  } : null;
+  closeActionConfig();
+  submitConfiguredAction({ ...context, targetId, distance, customAction });
+}
+
+function openPoiseDialog(unitId) { poiseTargetId = unitId; elements.poiseDialog.classList.remove("hidden"); document.body.classList.add("poise-modal-open"); renderPoiseControls(myUnit()); }
+function closePoiseDialog() { poiseTargetId = ""; elements.poiseDialog.classList.add("hidden"); document.body.classList.remove("poise-modal-open"); }
+function openStaggerDialog(unitId) { const unit = state?.units.find((entry) => entry.id === unitId); if (!unit) return; staggerTargetId = unitId; elements.staggerDialogTarget.textContent = unit.characterName; elements.staggerDuration.value = "5"; elements.staggerDialog.classList.remove("hidden"); elements.staggerDuration.focus(); }
+function closeStaggerDialog() { staggerTargetId = ""; elements.staggerDialog.classList.add("hidden"); }
+function openQueueDialog() { elements.queueDialog.classList.remove("hidden"); renderQueue(myUnit()); }
+function closeQueueDialog() { elements.queueDialog.classList.add("hidden"); }
+function openPlayerLog() { elements.playerLogDrawer.classList.remove("hidden"); document.body.classList.add("player-log-open"); }
+function closePlayerLogDrawer() { elements.playerLogDrawer.classList.add("hidden"); document.body.classList.remove("player-log-open"); }
+
+function ensureAudio() { const Context = window.AudioContext || window.webkitAudioContext; if (!audioContext) audioContext = new Context(); if (audioContext.state === "suspended") audioContext.resume(); return audioContext; }
+function tone(frequency, duration, gainValue = 0.04, type = "square") { const audio = ensureAudio(); const osc = audio.createOscillator(); const gain = audio.createGain(); osc.type = type; osc.frequency.value = frequency; gain.gain.setValueAtTime(gainValue, audio.currentTime); gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + duration); osc.connect(gain); gain.connect(audio.destination); osc.start(); osc.stop(audio.currentTime + duration + 0.02); }
+function playCombatStartSting() { combatStartAudio.pause(); combatStartAudio.currentTime = 0; combatStartAudio.volume = 0.9; combatStartAudio.play().catch(() => {}); }
+function playGmSound(name) { if (gmSoundsMuted) return; try { tone(name === "danger" ? 280 : name === "resolve" ? 760 : 680, 0.07, 0.025, "square"); } catch { /* Audio permission is optional. */ } }
+function playTurnDing() { try { tone(880, 0.22, 0.24, "sine"); setTimeout(() => tone(1320, 0.25, 0.2, "sine"), 120); } catch { /* Visual alert remains. */ } }
+function playInterruptedBuzz() { try { tone(180, 0.35, 0.35, "sawtooth"); } catch { /* Log remains. */ } }
+
+function notifyTurnIfNeeded() {
+  const active = activeUnit();
+  if (!active) { lastNotifiedActiveId = ""; return; }
   if (mode === "player" && active.id === myUnitId && alertsEnabled && lastNotifiedActiveId !== active.id) {
     lastNotifiedActiveId = active.id;
     if (navigator.vibrate) navigator.vibrate([180, 80, 180]);
     playTurnDing();
   }
-  notifyCommandWindowIfNeeded(active);
 }
 
 function notifyInterruptionIfNeeded() {
-  if (mode !== "player" || !state?.lastInterruptedId || !alertsEnabled) return;
-  if (state.lastInterruptedId !== myUnitId) return;
-  const key = `${state.lastInterruptedId}:${state.lastInterruptedAt || ""}`;
-  if (lastInterruptedNotice === key) return;
+  if (mode !== "player" || !state?.lastInterruptedId || state.lastInterruptedId !== myUnitId || !alertsEnabled) return;
+  const key = `${state.lastInterruptedId}:${state.lastInterruptedAt}`;
+  if (key === lastInterruptedNotice) return;
   lastInterruptedNotice = key;
-  if (navigator.vibrate) navigator.vibrate([280, 90, 280, 90, 420]);
+  if (navigator.vibrate) navigator.vibrate([280, 90, 420]);
   playInterruptedBuzz();
 }
 
-function notifyCommandWindowIfNeeded(active) {
-  if (mode !== "player" || active.id !== myUnitId || !alertsEnabled) return;
-  const command = commandFor(active);
-  if (!command || command.expired) return;
-  const remaining = Math.ceil(command.remaining);
-  const warningSecond = remaining <= 10 && remaining > 5 ? 10 : remaining <= 5 && remaining >= 1 ? remaining : null;
-  if (!warningSecond) return;
-  const key = `${active.id}:${warningSecond}`;
-  if (lastCommandWarningKey === key) return;
-  lastCommandWarningKey = key;
-  if (navigator.vibrate) navigator.vibrate(warningSecond <= 5 ? [120, 60, 120, 60, 120] : [220, 100, 220]);
-  playWarningDing(warningSecond <= 5);
+function enablePlayerAlerts(test = false) { alertsEnabled = true; safeLocalStorageSet("vector-atb-alerts", "on"); ensureAudio(); if (test) playTurnDing(); }
+function disablePlayerAlerts() { alertsEnabled = false; safeLocalStorageSet("vector-atb-alerts", "off"); }
+
+function returnToWelcome(message = "") {
+  if (events) events.close();
+  events = null; state = null; currentRoomCode = ""; myUnitId = "";
+  localStorage.removeItem("vector-atb-room-code"); localStorage.removeItem("vector-atb-unit-id");
+  setConnected(false, message || "Disconnected."); setMode("welcome");
 }
 
-function ensureAudio() {
-  const Context = window.AudioContext || window.webkitAudioContext;
-  if (!audioContext) audioContext = new Context();
-  if (audioContext.state === "suspended") audioContext.resume();
-  return audioContext;
-}
-
-function tone(frequency, start, duration, gainValue = 0.04, type = "square") {
-  const audio = ensureAudio();
-  const osc = audio.createOscillator();
-  const gain = audio.createGain();
-  osc.type = type;
-  osc.frequency.setValueAtTime(frequency, audio.currentTime + start);
-  gain.gain.setValueAtTime(0, audio.currentTime + start);
-  gain.gain.linearRampToValueAtTime(gainValue, audio.currentTime + start + 0.01);
-  gain.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + start + duration);
-  osc.connect(gain);
-  gain.connect(audio.destination);
-  osc.start(audio.currentTime + start);
-  osc.stop(audio.currentTime + start + duration + 0.02);
-}
-
-function playCombatStartSting() {
-  combatStartAudio.pause();
-  combatStartAudio.currentTime = 0;
-  combatStartAudio.volume = 0.9;
-  const playback = combatStartAudio.play();
-  if (playback?.catch) playback.catch(() => {});
-}
-
-function playGmSound(name = "tap") {
-  if (gmSoundsMuted) return;
-  try {
-    if (name === "start") {
-      tone(220, 0, 0.07, 0.035, "sawtooth");
-      tone(440, 0.08, 0.08, 0.04, "square");
-      return;
-    }
-    if (name === "firstStart") {
-      playCombatStartSting();
-      return;
-    }
-    if (name === "pause") {
-      tone(620, 0, 0.07, 0.034, "square");
-      tone(360, 0.08, 0.09, 0.032, "square");
-      return;
-    }
-    if (name === "resolve") {
-      tone(520, 0, 0.06, 0.035, "triangle");
-      tone(760, 0.06, 0.08, 0.035, "triangle");
-      return;
-    }
-    tone(680, 0, 0.045, 0.025, "square");
-    tone(920, 0.045, 0.045, 0.02, "square");
-  } catch {
-    // Browsers may block audio until the first tap.
-  }
-}
-
-function playTurnDing() {
-  try {
-    tone(880, 0, 0.22, 0.28, "sine");
-    tone(1320, 0.12, 0.28, 0.24, "sine");
-  } catch {
-    // Visual signal still works.
-  }
-}
-
-function playWarningDing(urgent = false) {
-  try {
-    if (urgent) {
-      tone(620, 0, 0.12, 0.28, "square");
-      tone(420, 0.24, 0.16, 0.24, "sawtooth");
-      return;
-    }
-    tone(520, 0, 0.2, 0.24, "triangle");
-  } catch {
-    // Visual warning remains visible.
-  }
-}
-
-function playInterruptedBuzz() {
-  try {
-    tone(240, 0, 0.2, 0.48, "sawtooth");
-    tone(120, 0.24, 0.36, 0.42, "sawtooth");
-  } catch {
-    // The combat log still shows the interruption.
-  }
-}
-
-function vibrationAvailable() {
-  return typeof navigator !== "undefined" && typeof navigator.vibrate === "function";
-}
-
-function playerAlertLabel() {
-  return alertsEnabled ? "Sound: On" : "Sound: Off";
-}
-
-function enablePlayerAlerts({ testSound = false } = {}) {
-  alertsEnabled = true;
-  safeLocalStorageSet("vector-atb-alerts", "on");
-  ensureAudio();
-  if (testSound) playTurnDing();
-}
-
-function disablePlayerAlerts() {
-  alertsEnabled = false;
-  safeLocalStorageSet("vector-atb-alerts", "off");
-}
-
-createRoom.addEventListener("click", async () => {
-  let response;
-  try {
-    response = await fetch("/api/create-room", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: "{}",
-    });
-  } catch {
-    setConnected(false, "Cannot reach the Vector ATB room server. Try again in a moment.");
-    return;
-  }
-  if (!response.ok) {
-    setConnected(false, "Could not create a room. Try again in a moment.");
-    return;
-  }
-  setRoom(await response.json());
-  myUnitId = "";
-  localStorage.removeItem("vector-atb-unit-id");
-  setMode("gm");
+elements.createRoom.addEventListener("click", async () => {
+  try { const response = await fetch("/api/create-room", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); if (response.ok) { setRoom(await response.json()); myUnitId = ""; setMode("gm"); } } catch { setConnected(false, "Cannot reach the Vector server."); }
 });
-
-showJoinRoom.addEventListener("click", () => setMode("roomJoin"));
-backToWelcome.addEventListener("click", () => setMode("welcome"));
-joinRoomCode.addEventListener("input", () => {
-  joinRoomCode.value = joinRoomCode.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+elements.showJoinRoom.addEventListener("click", () => setMode("roomJoin"));
+elements.backToWelcome.addEventListener("click", () => setMode("welcome"));
+elements.openGm.addEventListener("click", () => setMode("roomJoin"));
+elements.joinRoomCode.addEventListener("input", () => { elements.joinRoomCode.value = elements.joinRoomCode.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4); });
+elements.confirmJoinRoom.addEventListener("click", async () => {
+  const code = elements.joinRoomCode.value.trim().toUpperCase(); if (!code) return;
+  try { const response = await fetch(`/api/state?room=${encodeURIComponent(code)}`); if (!response.ok) return setConnected(false, "Room not found."); setRoom(await response.json()); setMode("join"); } catch { setConnected(false, "Cannot reach the room."); }
 });
-
-confirmJoinRoom.addEventListener("click", async () => {
-  const code = joinRoomCode.value.trim().toUpperCase();
-  if (!code) return;
-  let response;
-  try {
-    response = await fetch(`/api/state?room=${encodeURIComponent(code)}`);
-  } catch {
-    setConnected(false, "Cannot reach the Vector ATB room server. Check the room code or try again.");
-    return;
-  }
-  if (!response.ok) {
-    setConnected(false, "Room not found. Check the four-character room code.");
-    return;
-  }
-  setRoom(await response.json());
-  setMode("join");
-});
-
-joinPlayer.addEventListener("click", async () => {
+elements.joinPlayer.addEventListener("click", async () => {
   enablePlayerAlerts();
-  const next = await action({
-    action: "join",
-    playerName: playerName.value || "Player",
-    characterName: characterName.value || "Character",
-    baseline: DEFAULT_BASELINE,
-    commandWindow: DEFAULT_COMMAND_WINDOW,
-    color: playerColor.value,
-    controlledBy: "player",
-    team: "pc",
-    actorType: "character",
-  });
+  const next = await action({ action: "join", playerName: elements.playerName.value || "Player", characterName: elements.characterName.value || "Character", color: elements.playerColor.value, controlledBy: "player", team: "pc", commandWindow: DEFAULT_COMMAND_WINDOW, ...collectEntryData(pcFields) });
   if (!next) return;
-  const unit = next.units[next.units.length - 1];
-  myUnitId = unit.id;
-  safeLocalStorageSet("vector-atb-unit-id", myUnitId);
-  setMode("player");
+  const unit = next.units.at(-1); myUnitId = unit.id; safeLocalStorageSet("vector-atb-unit-id", myUnitId); setMode("player");
 });
+elements.rejoinPlayer.addEventListener("click", () => { myUnitId = elements.rejoinSelect.value; safeLocalStorageSet("vector-atb-unit-id", myUnitId); setMode("player"); });
 
-openGm.addEventListener("click", () => setMode("welcome"));
-
-rejoinPlayer.addEventListener("click", () => {
-  enablePlayerAlerts();
-  myUnitId = rejoinSelect.value;
-  safeLocalStorageSet("vector-atb-unit-id", myUnitId);
-  setMode("player");
+elements.gmAddUnit.addEventListener("click", async () => {
+  if (elements.gmTeam.value === "npc") applyNpcDefaultPreview();
+  await action({ action: "addUnit", playerName: elements.gmPlayerName.value || "GM", characterName: elements.gmCharacterName.value || "NPC", commandWindow: elements.gmTeam.value === "pc" ? elements.gmCommandWindow.value : null, color: elements.gmColor.value, controlledBy: "gm", team: elements.gmTeam.value, ...collectEntryData(gmFields) });
+  if (elements.gmTeam.value === "npc") { nextNpcDefault(); applyNpcDefaultPreview({ force: true }); }
 });
+elements.gmTeam.addEventListener("change", () => { elements.gmCommandWindowWrap.classList.toggle("hidden", elements.gmTeam.value !== "pc"); if (elements.gmTeam.value === "npc") { nextNpcDefault(); applyNpcDefaultPreview({ force: true }); } });
 
-function pressGmClockButton(event) {
-  if (!state) return;
-  event?.preventDefault();
-  event?.stopPropagation();
-  const now = Date.now();
-  if (now - lastGmClockClickAt < 650) return;
-  lastGmClockClickAt = now;
-  const clockAction = gmPanicPause.dataset.clockAction || (state.hardPaused ? "resume" : !state.running ? "start" : "pause");
-  if (clockAction === "pause") {
-    action({ action: "setHardPaused", paused: true }, "pause");
-    return;
-  }
-  if (clockAction === "resume") {
-    action({ action: "setHardPaused", paused: false }, "start");
-    return;
-  }
-  action({ action: "setRunning", running: true }, state.hasEngagedClock ? "start" : "firstStart");
-}
-
-gmPanicPause.addEventListener("pointerdown", pressGmClockButton);
-gmPanicPause.addEventListener("click", pressGmClockButton);
-stepTick.addEventListener("click", () => action({ action: "step" }, "tap"));
-resetAll.addEventListener("click", () => action({ action: "reset" }, "danger"));
-undoLastTiming.addEventListener("click", () => {
-  if (!state?.undoAvailable) return;
-  action({ action: "undoLastTiming" }, "resolve");
-});
-clearEncounter.addEventListener("click", () => {
-  if (confirm("Clear every character from this encounter?")) action({ action: "clearEncounter" }, "danger");
-});
-exitCombat.addEventListener("click", () => {
-  if (confirm("Exit this combat room and return to the main screen?")) returnToWelcome("Exited combat. Create or join a room when ready.");
-});
-gmMuteSound.addEventListener("click", () => {
-  gmSoundsMuted = !gmSoundsMuted;
-  safeLocalStorageSet("vector-atb-gm-muted", gmSoundsMuted ? "on" : "off");
-  playGmSound("tap");
-  render();
-});
-completeTurn.addEventListener("click", () => action({ action: "completeResolution" }, "resolve"));
-gmDelay.addEventListener("click", () => {});
-
-enableAlerts.addEventListener("click", () => {
-  if (alertsEnabled) disablePlayerAlerts();
-  else enablePlayerAlerts({ testSound: true });
-  render();
-});
-
-leaveRoom.addEventListener("click", () => returnToWelcome("Left the room. Create or join a room when ready."));
-
-gmAddUnit.addEventListener("click", () => {
-  const usingNpcDefault = gmTeam.value === "npc";
-  if (usingNpcDefault) applyNpcDefaultPreview();
-  action({
-    action: "addUnit",
-    playerName: gmPlayerName.value || "GM",
-    characterName: gmCharacterName.value || "NPC",
-    baseline: gmSpeedRating.value || DEFAULT_BASELINE,
-    commandWindow: gmTeam.value === "pc" ? gmCommandWindow.value || DEFAULT_COMMAND_WINDOW : null,
-    color: gmColor.value,
-    controlledBy: "gm",
-    team: gmTeam.value,
-    actorType: "character",
-  });
-  if (usingNpcDefault) {
-    nextNpcDefault();
-    applyNpcDefaultPreview({ force: true });
-  } else {
-    gmCharacterName.value = "";
-  }
-});
-
-gmTeam.addEventListener("change", () => {
-  gmCommandWindowWrap.classList.toggle("hidden", gmTeam.value !== "pc");
-  if (gmTeam.value === "npc") {
-    nextNpcDefault();
-    applyNpcDefaultPreview({ force: true });
-  }
-});
-
-unitList.addEventListener("click", (event) => {
+elements.unitList.addEventListener("click", (event) => {
   const actionButton = event.target.closest(".vector-action-button");
-  if (actionButton) {
-    const unitId = actionButton.closest("[data-action-unit]")?.dataset.actionUnit;
-    if (unitId) chooseAction(unitId, actionButton.dataset.actionId);
-    return;
-  }
-  const button = event.target.closest("button");
-  if (!button || mode !== "gm") return;
-  const id = button.dataset.id;
-  if (button.dataset.action === "stagger") openStaggerDialog(id);
-  if (button.dataset.action === "poise") openPoiseDialog(id);
-  if (button.dataset.action === "remove") action({ action: "removeUnit", id }, "danger");
-  if (button.dataset.action === "nudge") action({ action: "nudge", id, amount: 5 }, "tap");
+  if (actionButton) { const unitId = actionButton.closest("[data-action-unit]")?.dataset.actionUnit; if (unitId) openActionConfig(unitId, actionButton.dataset.actionId); return; }
+  const button = event.target.closest("button"); if (!button || mode !== "gm") return;
+  const unitId = button.dataset.id;
+  if (button.dataset.action === "stagger") openStaggerDialog(unitId);
+  if (button.dataset.action === "poise") openPoiseDialog(unitId);
+  if (button.dataset.action === "remove") action({ action: "removeUnit", id: unitId }, "danger");
+  if (button.dataset.action === "nudge") action({ action: "nudge", id: unitId, amount: 5 });
 });
-
-bindReliableTap(playerPoiseButton, () => {
-  if (!myUnitId || playerPoiseButton.disabled) return;
-  openPoiseDialog(myUnitId);
-});
-
-cancelStagger.addEventListener("click", closeStaggerDialog);
-confirmStagger.addEventListener("click", async () => {
-  if (!staggerTargetId) return;
-  const duration = clamp(Number(staggerDuration.value) || 0, 0.5, 120);
-  const targetId = staggerTargetId;
-  closeStaggerDialog();
-  await action({ action: "applyStagger", id: targetId, duration }, "danger");
-});
-staggerDuration.addEventListener("keydown", (event) => {
-  if (event.key === "Enter") confirmStagger.click();
-  if (event.key === "Escape") closeStaggerDialog();
-});
-
-bindReliableTap(cancelPoise, closePoiseDialog);
-
-for (const button of [poiseBrace, poiseSnapBack, poiseOvercommit]) {
-  bindReliableTap(button, async () => {
-    if (button.disabled || !poiseTargetId) return;
-    const targetId = poiseTargetId;
-    const use = button.dataset.poiseUse;
-    closePoiseDialog();
-    await action({ action: "spendPoise", id: targetId, use }, use === "overcommit" ? "resolve" : "tap");
-  });
-}
-
-poiseDialog.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closePoiseDialog();
-});
-
-playerTurnActions.addEventListener("click", (event) => {
-  const button = event.target.closest(".vector-action-button");
-  if (!button) return;
-  const unitId = button.closest("[data-action-unit]")?.dataset.actionUnit || myUnitId;
-  chooseAction(unitId, button.dataset.actionId);
-});
-
-playerFocusActions.addEventListener("pointerdown", (event) => {
-  const button = event.target.closest("button[data-action-id]");
-  if (!button || button.disabled || !event.isPrimary || !["touch", "pen"].includes(event.pointerType)) return;
-  playerActionPointer = {
-    id: event.pointerId,
-    button,
-    x: event.clientX,
-    y: event.clientY,
-  };
-});
-
-playerFocusActions.addEventListener("pointercancel", (event) => {
-  if (playerActionPointer?.id === event.pointerId) playerActionPointer = null;
-});
-
-playerFocusActions.addEventListener("pointerup", (event) => {
-  const pointer = playerActionPointer;
-  if (!pointer || pointer.id !== event.pointerId) return;
-  playerActionPointer = null;
-
-  const moved = Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y);
-  const releasedButton = event.target.closest("button[data-action-id]");
-  if (moved > 16 || releasedButton !== pointer.button) return;
-
-  event.preventDefault();
-  lastPlayerPointerActivationAt = performance.now();
-  submitPlayerAction(pointer.button);
-});
-
-playerFocusActions.addEventListener("click", (event) => {
-  const button = event.target.closest("button[data-action-id]");
-  if (!button || button.disabled || !myUnitId) return;
-  if (performance.now() - lastPlayerPointerActivationAt < 750) return;
-  submitPlayerAction(button);
-});
-
-playerLogButton.addEventListener("click", openPlayerLog);
-playerFocusLogButton.addEventListener("click", openPlayerLog);
-closePlayerLog.addEventListener("click", closePlayerLogDrawer);
-playerLogDrawer.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closePlayerLogDrawer();
-});
-
-unitList.addEventListener("change", (event) => {
-  const input = event.target.closest("input[data-action]");
-  if (!input) return;
-  if (mode === "player" && input.dataset.action === "playerColor" && input.dataset.id === myUnitId) {
-    action({ action: "setColor", id: myUnitId, color: input.value }, "tap");
-    return;
-  }
+elements.unitList.addEventListener("change", (event) => {
+  const input = event.target.closest("input[data-action]"); if (!input) return;
+  if (input.dataset.action === "playerColor" && input.dataset.id === myUnitId) action({ action: "setColor", id: myUnitId, color: input.value });
   if (mode !== "gm") return;
-  if (input.dataset.action === "speed") action({ action: "setSpeed", id: input.dataset.id, baseline: input.value }, "tap");
-  if (input.dataset.action === "commandWindow") action({ action: "setCommandWindow", id: input.dataset.id, commandWindow: input.value }, "tap");
-  if (input.dataset.action === "name") action({ action: "setName", id: input.dataset.id, characterName: input.value }, "tap");
-  if (input.dataset.action === "color") action({ action: "setColor", id: input.dataset.id, color: input.value }, "tap");
+  if (input.dataset.action === "name") action({ action: "setName", id: input.dataset.id, characterName: input.value });
+  if (input.dataset.action === "commandWindow") action({ action: "setCommandWindow", id: input.dataset.id, commandWindow: input.value });
+  if (input.dataset.action === "color") action({ action: "setColor", id: input.dataset.id, color: input.value });
 });
 
-setInterval(keepRoomAwake, KEEP_ALIVE_MS);
-setInterval(() => {
-  if (mode === "gm" && state?.running && !state.pausedForTurn && !state.pausedForResolution && !state.hardPaused && !gmSoundsMuted && !document.hidden) {
-    try {
-      tone(1180, 0, 0.018, 0.006, "square");
-    } catch {
-      // Audio may be blocked until first tap.
-    }
-  }
-}, 1000);
+let playerPointer = null;
+let lastPlayerPointerActivationAt = -Infinity;
+elements.playerFocusActions.addEventListener("pointerdown", (event) => { const button = event.target.closest("button[data-action-id]"); if (button && event.isPrimary) playerPointer = { id: event.pointerId, button, x: event.clientX, y: event.clientY }; });
+elements.playerFocusActions.addEventListener("pointerup", (event) => { if (!playerPointer || playerPointer.id !== event.pointerId) return; const pointer = playerPointer; playerPointer = null; if (Math.hypot(event.clientX - pointer.x, event.clientY - pointer.y) <= 20) { event.preventDefault(); lastPlayerPointerActivationAt = performance.now(); openActionConfig(myUnitId, pointer.button.dataset.actionId); } });
+elements.playerFocusActions.addEventListener("pointercancel", () => { playerPointer = null; });
+elements.playerFocusActions.addEventListener("click", (event) => { if (performance.now() - lastPlayerPointerActivationAt < 700) return; const button = event.target.closest("button[data-action-id]"); if (button) openActionConfig(myUnitId, button.dataset.actionId); });
 
-if (currentRoomCode && mode !== "welcome" && mode !== "roomJoin") {
-  fetch(`/api/state?room=${encodeURIComponent(currentRoomCode)}`)
-    .then((response) => (response.ok ? response.json() : null))
-    .then((nextState) => {
-      if (!nextState) {
-        returnToWelcome("That room expired. Create or join a new room.");
-        return;
-      }
-      setRoom(nextState);
-      render();
-    })
-    .catch(() => {
-      setConnected(false, "Cannot reconnect to the saved room.");
-      render();
-    });
-} else {
-  nextNpcDefault();
-  applyNpcDefaultPreview({ force: true });
-  render();
-}
+elements.actionTarget.addEventListener("change", () => elements.actionOtherTargetWrap.classList.toggle("hidden", elements.actionTarget.value !== "__other__"));
+elements.cancelActionConfig.addEventListener("click", closeActionConfig);
+elements.confirmActionConfig.addEventListener("click", confirmConfiguredAction);
+elements.actionConfigDialog.addEventListener("keydown", (event) => { if (event.key === "Escape") closeActionConfig(); });
+
+elements.playerPoiseButton.addEventListener("click", () => { if (myUnitId) openPoiseDialog(myUnitId); });
+elements.cancelPoise.addEventListener("click", closePoiseDialog);
+elements.poiseChoiceList.addEventListener("click", async (event) => { const button = event.target.closest("button[data-poise-use]"); if (!button || !poiseTargetId) return; const id = poiseTargetId; closePoiseDialog(); await action({ action: "spendPoise", id, use: button.dataset.poiseUse }, "resolve"); });
+
+elements.cancelStagger.addEventListener("click", closeStaggerDialog);
+elements.confirmStagger.addEventListener("click", async () => { if (!staggerTargetId) return; const id = staggerTargetId; const duration = Math.max(0.1, Number(elements.staggerDuration.value) || 1); closeStaggerDialog(); await action({ action: "applyStagger", id, duration }, "danger"); });
+elements.continueStagger.addEventListener("click", () => { const pending = state?.pendingStagger; if (pending) action({ action: "resolveStagger", id: pending.unitId, choice: "continue" }, "danger"); });
+elements.ignoreStagger.addEventListener("click", () => { const pending = state?.pendingStagger; if (pending) action({ action: "resolveStagger", id: pending.unitId, choice: "ignore" }, "resolve"); });
+
+elements.playerQueueButton.addEventListener("click", openQueueDialog);
+elements.closeQueueDialog.addEventListener("click", closeQueueDialog);
+elements.queueActionChoices.addEventListener("click", (event) => { const button = event.target.closest("button[data-queue-action]"); if (!button) return; closeQueueDialog(); openActionConfig(myUnitId, button.dataset.queueAction, { queue: true }); });
+elements.queuedActionList.addEventListener("click", async (event) => { const button = event.target.closest("button[data-remove-queue]"); if (!button) return; await action({ action: "removeQueuedAction", id: myUnitId, index: Number(button.dataset.removeQueue) }); renderQueue(myUnit()); });
+
+elements.completeTurn.addEventListener("click", () => action({ action: "completeResolution" }, "resolve"));
+elements.gmPanicPause.addEventListener("click", () => { const now = performance.now(); if (now - lastGmClockClickAt < 450) return; lastGmClockClickAt = now; action({ action: "toggleClock" }, state?.running ? "pause" : "start"); });
+elements.stepTick.addEventListener("click", () => action({ action: "step" }));
+elements.resetAll.addEventListener("click", () => { if (confirm("Reset every character and Poise pool?")) action({ action: "reset" }, "danger"); });
+elements.clearEncounter.addEventListener("click", () => { if (confirm("Remove every participant?")) action({ action: "clearEncounter" }, "danger"); });
+elements.undoLastTiming.addEventListener("click", () => action({ action: "undoLastTiming" }));
+elements.exitCombat.addEventListener("click", () => returnToWelcome("Exited combat."));
+elements.leaveRoom.addEventListener("click", () => returnToWelcome("Left the room."));
+elements.gmMuteSound.addEventListener("click", () => { gmSoundsMuted = !gmSoundsMuted; safeLocalStorageSet("vector-atb-gm-muted", gmSoundsMuted ? "on" : "off"); elements.gmMuteSound.classList.toggle("muted", gmSoundsMuted); });
+elements.enableAlerts.addEventListener("click", () => { if (alertsEnabled) disablePlayerAlerts(); else enablePlayerAlerts(true); render(); });
+elements.playerLogButton.addEventListener("click", openPlayerLog);
+elements.playerFocusLogButton.addEventListener("click", openPlayerLog);
+elements.closePlayerLog.addEventListener("click", closePlayerLogDrawer);
+
+setInterval(() => {
+  const mine = myUnit();
+  if (mode !== "player" || !mine || !alertsEnabled || document.hidden || state?.hardPaused || !state?.running) return;
+  const completion = mine.phaseDirection === "down" ? 100 - pct(mine) : pct(mine);
+  if (completion < 75) return;
+  const intensity = (completion - 75) / 25;
+  try { tone(920 + intensity * 380, 0.025, 0.008 + intensity * 0.035, "square"); } catch { /* Sound remains optional. */ }
+}, 500);
+
+setInterval(async () => {
+  if (mode !== "gm" || !currentRoomCode) return;
+  try { const response = await fetch(`/api/keep-alive?room=${encodeURIComponent(currentRoomCode)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); if (response.ok) receiveState(await response.json()); } catch { /* SSE will reconnect. */ }
+}, KEEP_ALIVE_MS);
+
+nextNpcDefault();
+applyNpcDefaultPreview({ force: true });
+if (currentRoomCode && !["welcome", "roomJoin"].includes(mode)) {
+  fetch(`/api/state?room=${encodeURIComponent(currentRoomCode)}`).then((response) => response.ok ? response.json() : null).then((next) => { if (next) setRoom(next); else returnToWelcome("That room expired."); }).catch(() => setConnected(false, "Cannot reconnect."));
+} else render();

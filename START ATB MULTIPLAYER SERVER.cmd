@@ -1,12 +1,12 @@
 @echo off
 setlocal
-title Spaceship Architect ATB Multiplayer Server
+title Vector ATB Multiplayer Server
 cd /d "%~dp0"
 
 set "NODE_EXE=C:\Users\zombi\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe"
 if not exist "%NODE_EXE%" set "NODE_EXE=node"
 
-echo Spaceship Architect ATB Multiplayer
+echo Vector ATB Multiplayer
 echo.
 echo Keep this window open while phones are using the ATB app.
 echo.
