@@ -15,8 +15,10 @@ let actionConfigContext = null;
 let improvisedInputMode = "time";
 let staggerTargetId = "";
 let poiseTargetId = "";
-let lastNoticeId = "";
-let noticeTimer = null;
+const seenLogIds = new Set();
+const pendingLogNotices = [];
+let activeLogNoticeCount = 0;
+let noticeGeneration = 0;
 
 const DEFAULT_COMMAND_WINDOW = 20;
 const KEEP_ALIVE_MS = 30000;
@@ -35,15 +37,15 @@ const actionFallbacks = [
 ];
 
 const npcDefaults = [
-  { characterName: "Security Guard", color: "#39e58f", stats: [7, 7, 7, 7, 3, 7, 6, 6] },
-  { characterName: "Street Tough", color: "#f07a4a", stats: [5, 8, 5, 6, 4, 3, 8, 5] },
-  { characterName: "Corporate Agent", color: "#35b7ff", stats: [9, 8, 10, 9, 5, 8, 5, 7] },
-  { characterName: "Civilian", color: "#f2d16b", stats: [5, 5, 5, 4, 1, 2, 2, 3] },
-  { characterName: "Drone Handler", color: "#20f5d0", stats: [9, 6, 9, 8, 4, 8, 3, 5] },
-  { characterName: "Police Exo", color: "#ff5fa2", stats: [7, 10, 8, 8, 6, 9, 8, 8] },
-  { characterName: "Fast Operative", color: "#a65cff", stats: [8, 13, 10, 10, 6, 10, 9, 11] },
-  { characterName: "Heavy Enforcer", color: "#ff3d55", stats: [5, 6, 6, 5, 7, 8, 9, 5] },
-  { characterName: "Vector Anomaly", color: "#8bd7ff", stats: [12, 11, 13, 12, 8, 10, 10, 10] },
+  { characterName: "Security Guard", color: "#39e58f", ranges: [[5, 7], [5, 7], [6, 8], [2, 4], [2, 4], [3, 4], [2, 3], [2, 4]] },
+  { characterName: "Street Tough", color: "#f07a4a", ranges: [[4, 6], [6, 8], [4, 6], [1, 3], [2, 4], [0, 2], [3, 5], [2, 4]] },
+  { characterName: "Corporate Agent", color: "#35b7ff", ranges: [[7, 9], [5, 7], [7, 9], [3, 5], [3, 5], [3, 5], [1, 3], [2, 4]] },
+  { characterName: "Civilian", color: "#f2d16b", ranges: [[4, 6], [4, 6], [4, 6], [0, 2], [0, 2], [0, 1], [0, 1], [1, 3]] },
+  { characterName: "Drone Handler", color: "#20f5d0", ranges: [[7, 9], [4, 6], [7, 9], [3, 5], [2, 4], [2, 4], [0, 2], [1, 3]] },
+  { characterName: "Police Exo", color: "#ff5fa2", ranges: [[6, 8], [7, 9], [6, 8], [3, 5], [3, 5], [3, 5], [3, 5], [2, 4]] },
+  { characterName: "Fast Operative", color: "#a65cff", ranges: [[6, 8], [8, 9], [7, 9], [4, 5], [3, 5], [3, 5], [3, 5], [4, 5]] },
+  { characterName: "Heavy Enforcer", color: "#ff3d55", ranges: [[4, 6], [6, 8], [4, 6], [1, 3], [4, 5], [3, 5], [4, 5], [1, 3]] },
+  { characterName: "Vector Anomaly", color: "#8bd7ff", ranges: [[8, 9], [7, 9], [8, 9], [3, 5], [3, 5], [2, 4], [2, 4], [3, 5]] },
 ];
 let npcDefaultBag = [];
 let currentNpcDefault = null;
@@ -158,9 +160,17 @@ function shuffleNpcDefaultBag() {
   }
 }
 
+function randomWhole(minimum, maximum) {
+  return minimum + Math.floor(Math.random() * (maximum - minimum + 1));
+}
+
+function rollNpcDefault(archetype) {
+  return { ...archetype, stats: archetype.ranges.map(([minimum, maximum]) => randomWhole(minimum, maximum)) };
+}
+
 function nextNpcDefault() {
   if (!npcDefaultBag.length) shuffleNpcDefaultBag();
-  currentNpcDefault = npcDefaultBag.pop() || npcDefaults[0];
+  currentNpcDefault = rollNpcDefault(npcDefaultBag.pop() || npcDefaults[0]);
   return currentNpcDefault;
 }
 
@@ -185,9 +195,22 @@ function setMode(nextMode) {
   render();
 }
 
+function rememberLogs(entries) {
+  for (const entry of entries || []) if (entry?.id) seenLogIds.add(entry.id);
+  if (seenLogIds.size <= 300) return;
+  const currentIds = new Set((entries || []).map((entry) => entry?.id).filter(Boolean));
+  for (const id of seenLogIds) if (!currentIds.has(id)) seenLogIds.delete(id);
+}
+
 function setRoom(nextState) {
   state = nextState;
-  lastNoticeId = state.notice?.id || "";
+  seenLogIds.clear();
+  rememberLogs(state.log);
+  noticeGeneration += 1;
+  pendingLogNotices.length = 0;
+  activeLogNoticeCount = 0;
+  elements.globalNotice.replaceChildren();
+  elements.globalNotice.classList.add("hidden");
   currentRoomCode = state.roomCode;
   safeLocalStorageSet("vector-atb-room-code", currentRoomCode);
   elements.roomCode.textContent = currentRoomCode;
@@ -199,23 +222,46 @@ function setRoom(nextState) {
 function receiveState(nextState) {
   if (!nextState || (state && nextState.revision < state.revision)) return;
   const previousEngaged = Boolean(state?.hasEngagedClock);
+  const newLogs = (nextState.log || []).filter((entry) => entry?.id && !seenLogIds.has(entry.id));
   state = nextState;
-  if (state.notice?.id && state.notice.id !== lastNoticeId) showGlobalNotice(state.notice);
+  rememberLogs(state.log);
+  if (newLogs.length) showGlobalNotices(newLogs);
   if (mode === "gm" && !previousEngaged && state.hasEngagedClock) playCombatStartSting();
   notifyTurnIfNeeded();
   notifyInterruptionIfNeeded();
   render();
 }
 
-function showGlobalNotice(notice) {
-  lastNoticeId = notice.id;
-  elements.globalNotice.textContent = notice.text;
-  elements.globalNotice.dataset.type = notice.type || "info";
-  elements.globalNotice.classList.remove("hidden", "showing");
-  void elements.globalNotice.offsetWidth;
-  elements.globalNotice.classList.add("showing");
-  clearTimeout(noticeTimer);
-  noticeTimer = setTimeout(() => elements.globalNotice.classList.add("hidden"), 3600);
+function showGlobalNotices(entries) {
+  pendingLogNotices.push(...entries);
+  flushGlobalNotices();
+}
+
+function flushGlobalNotices() {
+  const phone = window.matchMedia("(max-width: 720px)").matches;
+  const limit = phone ? 3 : 5;
+  const visibleMs = phone ? 2000 : 3200;
+  const generation = noticeGeneration;
+  elements.globalNotice.classList.remove("hidden");
+  while (activeLogNoticeCount < limit && pendingLogNotices.length) {
+    const entry = pendingLogNotices.shift();
+    const item = document.createElement("div");
+    item.className = "global-notice-item";
+    item.textContent = entry.text;
+    elements.globalNotice.append(item);
+    activeLogNoticeCount += 1;
+    requestAnimationFrame(() => item.classList.add("showing"));
+    setTimeout(() => {
+      item.classList.add("leaving");
+      setTimeout(() => {
+        item.remove();
+        if (generation !== noticeGeneration) return;
+        activeLogNoticeCount = Math.max(0, activeLogNoticeCount - 1);
+        if (pendingLogNotices.length) flushGlobalNotices();
+        else if (!activeLogNoticeCount) elements.globalNotice.classList.add("hidden");
+      }, 220);
+    }, visibleMs);
+  }
 }
 
 async function action(payload, sound = "tap") {
@@ -242,7 +288,13 @@ function connectEvents() {
 }
 
 function phaseLabel(unit) {
+  if (unit?.phase === "execution" && unit.currentAction?.kind === "move") return `MOVEMENT: ${formatRate(unit.movementUnits)} UNITS`;
   return ({ decision: "DECISION", preparation: "PREPARATION", execution: "EXECUTION", recovery: "RECOVERY", stagger: "STAGGER", dumbfounded: "DUMBFOUNDED!" })[unit?.phase] || String(unit?.phase || "").toUpperCase();
+}
+
+function resolutionDetail(activeAction) {
+  if (activeAction?.action?.kind === "move") return `Moved ${formatRate(activeAction.action.movement?.distance)} Units`;
+  return activeAction?.targetName !== "None/N/A" ? `Target: ${activeAction.targetName}` : "No target";
 }
 
 function actionLabel(unit) {
@@ -296,7 +348,7 @@ function unitCardMarkup(unit, { gm = false, player = false } = {}) {
     const compactAction = compactActionLabel(unit);
     return `${cardStart}
       <div class="player-compact-identity"><span class="player-color-swatch" aria-hidden="true"></span><strong>${escapeHtml(unit.characterName)}</strong>${own ? `<span class="player-you-marker">You</span>` : ""}</div>
-      <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label player-unit-state"><strong>${escapeHtml(phaseLabel(unit))}</strong>${compactAction ? `<span class="player-compact-action">${escapeHtml(compactAction)}</span>` : ""}</div></div>
+      <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label player-unit-state"><strong class="unit-phase-label">${escapeHtml(phaseLabel(unit))}</strong>${compactAction ? `<span class="player-compact-action">${escapeHtml(compactAction)}</span>` : ""}</div></div>
     </article>`;
   }
   const gmControls = gm ? `<div class="unit-actions"><label>Name<input data-action="name" data-id="${escapeHtml(unit.id)}" value="${escapeHtml(unit.characterName)}" /></label>${unit.team === "pc" ? `<label>Command<input data-action="commandWindow" data-id="${escapeHtml(unit.id)}" type="number" min="1" value="${unit.commandWindow || DEFAULT_COMMAND_WINDOW}" /></label>` : ""}<label>Color<input data-action="color" data-id="${escapeHtml(unit.id)}" type="color" value="${escapeHtml(unit.color)}" /></label><button class="mini" data-action="nudge" data-id="${escapeHtml(unit.id)}">+5%</button><button class="mini danger" data-action="remove" data-id="${escapeHtml(unit.id)}">Remove</button></div>` : "";
@@ -308,7 +360,7 @@ function unitCardMarkup(unit, { gm = false, player = false } = {}) {
       ${gm ? `<div class="vector-card-tools"><button class="vector-icon-button damage-button" data-action="stagger" data-id="${escapeHtml(unit.id)}" title="Damage / Stagger" aria-label="Apply Stagger"><span class="target-symbol"></span></button>${poiseTool}</div>` : ""}
       ${gmControls}
     </div>
-    <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label">${escapeHtml(awaitingPlayer ? "AWAITING PLAYER DECISION" : phaseLabel(unit))}</div></div>
+    <div class="meter vector-phase-meter ${unit.phaseDirection === "down" ? "draining" : ""}"><div class="fill" style="width:${pct(unit)}%"></div><div class="vector-bar-label unit-phase-label">${escapeHtml(awaitingPlayer ? "AWAITING PLAYER DECISION" : phaseLabel(unit))}</div></div>
     ${gm && !awaitingPlayer ? actionButtonsMarkup(unit) : ""}
   </article>`;
 }
@@ -317,7 +369,9 @@ function updateUnitCard(card, unit) {
   card.querySelector(".fill")?.style.setProperty("width", `${pct(unit)}%`);
   const percent = card.querySelector(".unit-percent"); if (percent) percent.textContent = `${Math.floor(pct(unit))}%`;
   const estimate = card.querySelector(".unit-estimate"); if (estimate) estimate.textContent = estimatePhase(unit);
-  const actionName = card.querySelector(".unit-action-name"); if (actionName) actionName.textContent = actionLabel(unit);
+  const awaitingPlayer = mode === "gm" && state?.activeId === unit.id && unit.controlledBy === "player";
+  const actionName = card.querySelector(".unit-action-name"); if (actionName) actionName.textContent = awaitingPlayer ? "Awaiting Player" : actionLabel(unit);
+  const phase = card.querySelector(".unit-phase-label"); if (phase) phase.textContent = awaitingPlayer ? "AWAITING PLAYER DECISION" : phaseLabel(unit);
   const compactAction = card.querySelector(".player-compact-action"); if (compactAction) compactAction.textContent = compactActionLabel(unit);
   const risk = card.querySelector(".unit-risk"); if (risk) risk.textContent = currentRiskLabel(unit);
 }
@@ -350,9 +404,8 @@ function renderActivePanel() {
   if (state.activeAction) {
     elements.activeKicker.textContent = "Resolve Action";
     elements.activeTitle.textContent = `RESOLVE: ${state.activeAction.label}`;
-    const target = state.activeAction.targetName !== "None/N/A" ? `Target ${state.activeAction.targetName}` : "No target";
     const moving = state.activeAction.movingTargetPenalty ? ` - Moving target To-Hit -${state.activeAction.movingTargetPenalty}` : "";
-    elements.activeMeta.textContent = `${state.activeAction.characterName} - ${target}${moving}`;
+    elements.activeMeta.textContent = `${state.activeAction.characterName} - ${resolutionDetail(state.activeAction)}${moving}`;
   } else if (state.pendingStagger) {
     elements.activeKicker.textContent = "Stagger Response"; elements.activeTitle.textContent = `Awaiting ${state.pendingStagger.characterName}`; elements.activeMeta.textContent = `${formatSecondsValue(state.pendingStagger.duration)} Stagger`;
   } else if (active) {
@@ -387,7 +440,7 @@ function renderPlayerCommand(mine) {
   if (isResolution) {
     elements.playerFocusEyebrow.textContent = "Resolution";
     elements.playerResolutionAction.textContent = state.activeAction.label;
-    elements.playerResolutionStatus.textContent = state.activeAction.targetName !== "None/N/A" ? `Target: ${state.activeAction.targetName}` : "GM resolving";
+    elements.playerResolutionStatus.textContent = resolutionDetail(state.activeAction);
     return;
   }
   const command = commandFor(mine);
@@ -467,7 +520,7 @@ function renderResolutionDialog() {
     elements.turnDialogKicker.textContent = state.activeAction.action.poiseBreaker ? "Poise Breaker" : "Resolve Action";
     elements.activeName.textContent = `RESOLVE: ${state.activeAction.label}`;
     const moving = state.activeAction.movingTargetPenalty ? ` - To-Hit ${-state.activeAction.movingTargetPenalty}` : "";
-    elements.activeOwner.textContent = `${state.activeAction.characterName} - Target: ${state.activeAction.targetName}${moving}`;
+    elements.activeOwner.textContent = `${state.activeAction.characterName} - ${resolutionDetail(state.activeAction)}${moving}`;
     elements.turnDialog.classList.remove("hidden");
   } else elements.turnDialog.classList.add("hidden");
 }
